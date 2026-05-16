@@ -31,6 +31,11 @@ public:
     std::string getWindowTitle(uintptr_t windowId) override;
     QPoint getWindowPosition(uintptr_t windowId) override;
     WindowInfo getWindowInfo(uintptr_t windowId) override;
+
+    // Minimized window handling
+    bool isWindowMinimized(uintptr_t windowId) override;
+    WindowInfo getWindowPlacementInfo(uintptr_t windowId) override;
+
     uintptr_t getWindowAtPoint(int x, int y) override;
     void highlightWindow(uintptr_t windowId, int durationMs = 500) override;
 

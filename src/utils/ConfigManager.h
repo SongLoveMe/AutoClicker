@@ -16,12 +16,12 @@ struct AppConfig {
     ClickMode mode = ClickMode::FixedPosition;
     MouseButton button = MouseButton::Left;
     ClickAction action = ClickAction::Single;
-    ClickMethod clickMethod = ClickMethod::NoInterference;  // Default to no interference
+    // Removed: clickMethod - always NoInterference now
     int intervalBase = 100;       // Base interval in ms
     int jitterRange = 10;         // Jitter range in ms (+/-)
-    bool useRandomJitter = false; // Enable random jitter
+    bool useRandomize = false;    // Combined: interval jitter + position offset
     int clickCount = -1;
-    bool antiDetect = false;
+    // Removed: antiDetect - merged into useRandomize
 
     // Position settings
     int targetX = 0;
@@ -35,7 +35,7 @@ struct AppConfig {
     // Window settings
     QString bindWindowTitle;
     bool bindToWindow = false;
-    bool stayOnTop = false;       // Window stay on top
+    // Removed: stayOnTop - always true now
 
     // General settings
     QString language = "en";

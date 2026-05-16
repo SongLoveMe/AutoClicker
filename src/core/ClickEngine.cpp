@@ -222,11 +222,18 @@ void ClickEngine::performClick()
 
                     // Use per-point window binding
                     if (pt.windowId != 0) {
-                        // Get current window position for movement compensation
-                        WindowInfo winInfo = m_platform->getWindowInfo(pt.windowId);
+                        // Use getWindowPlacementInfo for proper position handling
+                        // This works correctly for minimized/maximized windows
+                        WindowInfo winInfo = m_platform->getWindowPlacementInfo(pt.windowId);
 
                         // Verify window still exists (check if title matches)
                         if (winInfo.id == pt.windowId || winInfo.title == pt.windowTitle) {
+                            // Check if window is minimized
+                            bool isMinimized = m_platform->isWindowMinimized(pt.windowId);
+                            if (isMinimized) {
+                                qDebug() << "Target window is minimized, using restored position";
+                            }
+
                             clickX = winInfo.x + pt.relX;
                             clickY = winInfo.y + pt.relY;
                             clickWindowId = pt.windowId;
@@ -273,9 +280,10 @@ void ClickEngine::performClick()
             m_platform->clickElement(m_targetElement.windowId, clickButton, m_action);
         } else if (m_clickMethod == ClickMethod::NoInterference && clickWindowId != 0) {
             // Use window-bound no-interference - send directly to target window
-            QPoint windowPos = m_platform->getWindowPosition(clickWindowId);
-            int relX = clickX - windowPos.x();
-            int relY = clickY - windowPos.y();
+            // Use getWindowPlacementInfo for correct position (handles minimized windows)
+            WindowInfo winInfo = m_platform->getWindowPlacementInfo(clickWindowId);
+            int relX = clickX - winInfo.x;
+            int relY = clickY - winInfo.y;
             m_platform->simulateClickToWindow(clickWindowId, relX, relY, clickButton, m_action);
         } else if (m_clickMethod == ClickMethod::NoInterference) {
             // Use no-interference click method (no window binding)

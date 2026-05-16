@@ -262,16 +262,18 @@ QPoint WindowsPlatformAdapter::getMousePosition()
 
 bool WindowsPlatformAdapter::registerHotkey(int id, int key, int modifiers, std::function<void()> callback)
 {
-    // Get window handle
+    // Get window handle - must be a visible window for hotkey registration
     if (!m_hwnd) {
         QWidget* mainWindow = QApplication::topLevelWidgets().isEmpty() ? nullptr : QApplication::topLevelWidgets().first();
-        if (mainWindow) {
+        if (mainWindow && mainWindow->isVisible()) {
             m_hwnd = reinterpret_cast<HWND>(mainWindow->winId());
         }
     }
 
-    if (!m_hwnd) {
-        qWarning() << "Cannot register hotkey: no window handle";
+    // Verify window handle is valid
+    if (!m_hwnd || !IsWindow(m_hwnd)) {
+        qWarning() << "Cannot register hotkey: invalid window handle";
+        m_hwnd = nullptr;
         return false;
     }
 
@@ -412,19 +414,19 @@ WindowsPlatformAdapter* WindowsPlatformAdapter::s_instance = nullptr;
 
 bool WindowsPlatformAdapter::shouldFilterClick(int x, int y)
 {
-    if (!m_hwnd) return false;
+    // Use process ID comparison - more reliable than HWND comparison for Qt windows
+    DWORD myProcessId = GetCurrentProcessId();
 
-    HWND autoClickerWindow = GetAncestor(m_hwnd, GA_ROOT);
-    if (!autoClickerWindow) return false;
-
-    // Get the window at the click position
     POINT pt = {x, y};
     HWND clickedWindow = WindowFromPoint(pt);
+    if (!clickedWindow) return false;
 
-    // Check if the clicked window belongs to AutoClicker (either root or child)
-    HWND clickedRoot = GetAncestor(clickedWindow, GA_ROOT);
+    // Get the process ID of the clicked window
+    DWORD clickedProcessId = 0;
+    GetWindowThreadProcessId(clickedWindow, &clickedProcessId);
 
-    return (clickedRoot == autoClickerWindow);
+    // Filter if clicked window belongs to our process (AutoClicker)
+    return (clickedProcessId == myProcessId);
 }
 
 // Mouse hook implementation
@@ -475,6 +477,15 @@ bool WindowsPlatformAdapter::startMouseHook(std::function<void(const RecordedCli
     if (m_mouseHook) {
         qWarning() << "Mouse hook already active";
         return false;
+    }
+
+    // Initialize m_hwnd if not already set (ensure shouldFilterClick works)
+    if (!m_hwnd) {
+        QWidget* mainWindow = QApplication::topLevelWidgets().isEmpty() ? nullptr : QApplication::topLevelWidgets().first();
+        if (mainWindow) {
+            m_hwnd = reinterpret_cast<HWND>(mainWindow->winId());
+            qDebug() << "Window handle initialized for mouse hook filtering";
+        }
     }
 
     m_mouseHookCallback = callback;
@@ -561,6 +572,62 @@ WindowInfo WindowsPlatformAdapter::getWindowInfo(uintptr_t windowId)
     info.y = rect.top;
     info.width = rect.right - rect.left;
     info.height = rect.bottom - rect.top;
+
+    // Get process name
+    DWORD processId;
+    GetWindowThreadProcessId(hwnd, &processId);
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
+    if (hProcess) {
+        WCHAR processName[MAX_PATH];
+        GetModuleFileNameExW(hProcess, nullptr, processName, MAX_PATH);
+        info.processName = processName;
+        CloseHandle(hProcess);
+    }
+
+    return info;
+}
+
+bool WindowsPlatformAdapter::isWindowMinimized(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    return IsIconic(hwnd) != 0;
+}
+
+WindowInfo WindowsPlatformAdapter::getWindowPlacementInfo(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    WindowInfo info;  // Default values are 0 due to struct initialization
+
+    // Check if window is valid
+    if (!IsWindow(hwnd)) {
+        info.id = 0;  // Mark as invalid
+        return info;
+    }
+
+    info.id = windowId;
+
+    // Use GetWindowPlacement for proper handling of minimized/maximized windows
+    WINDOWPLACEMENT wp;
+    wp.length = sizeof(WINDOWPLACEMENT);
+
+    if (GetWindowPlacement(hwnd, &wp)) {
+        // rcNormalPosition gives the "restored" position
+        // This works correctly even when window is minimized/maximized
+        info.x = wp.rcNormalPosition.left;
+        info.y = wp.rcNormalPosition.top;
+        info.width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+        info.height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+    }
+
+    // Get title (Unicode)
+    int length = GetWindowTextLengthW(hwnd);
+    if (length > 0) {
+        std::wstring title;
+        title.resize(length + 1);
+        GetWindowTextW(hwnd, &title[0], length + 1);
+        title.resize(length);
+        info.title = title;
+    }
 
     // Get process name
     DWORD processId;

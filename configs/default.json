@@ -3,12 +3,10 @@
         "mode": 0,
         "button": 0,
         "action": 0,
-        "clickMethod": 0,
         "intervalBase": 200,
         "jitterRange": 10,
-        "useRandomJitter": false,
-        "clickCount": 0,
-        "antiDetect": false
+        "useRandomize": false,
+        "clickCount": 0
     },
     "position": {
         "targetX": 0,
@@ -21,8 +19,7 @@
     },
     "window": {
         "bindWindowTitle": "",
-        "bindToWindow": false,
-        "stayOnTop": true
+        "bindToWindow": false
     },
     "general": {
         "language": "zh",

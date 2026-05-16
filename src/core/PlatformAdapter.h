@@ -74,10 +74,10 @@ struct RecordedClick {
 };
 
 struct WindowInfo {
-    uintptr_t id;
+    uintptr_t id = 0;
     std::wstring title;             // Unicode window title
     std::wstring processName;       // Unicode process name
-    int x, y, width, height;
+    int x = 0, y = 0, width = 0, height = 0;
 };
 
 struct ElementInfo {
@@ -118,6 +118,11 @@ public:
 
     virtual QPoint getWindowPosition(uintptr_t windowId) = 0;
     virtual WindowInfo getWindowInfo(uintptr_t windowId) = 0;
+
+    // Minimized window handling - uses GetWindowPlacement for correct position
+    virtual bool isWindowMinimized(uintptr_t windowId) = 0;
+    virtual WindowInfo getWindowPlacementInfo(uintptr_t windowId) = 0;
+
     virtual uintptr_t getWindowAtPoint(int x, int y) = 0;
 
     // Window highlight for visual feedback

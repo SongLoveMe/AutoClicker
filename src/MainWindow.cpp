@@ -28,13 +28,10 @@ MainWindow::MainWindow(QWidget* parent)
     , m_clickCountLabel(nullptr)
     , m_buttonCombo(nullptr)
     , m_clickTypeCombo(nullptr)
-    , m_clickMethodCombo(nullptr)
     , m_intervalSpin(nullptr)
-    , m_randomJitterCheck(nullptr)
+    , m_randomizeCheck(nullptr)
     , m_jitterRangeSpin(nullptr)
     , m_countSpin(nullptr)
-    , m_antiDetectCheck(nullptr)
-    , m_stayOnTopCheck(nullptr)
     , m_positionLabel(nullptr)
     , m_manualXSpin(nullptr)
     , m_manualYSpin(nullptr)
@@ -49,7 +46,6 @@ MainWindow::MainWindow(QWidget* parent)
     , m_sequenceList(nullptr)
     , m_targetX(0)
     , m_targetY(0)
-    , m_stayOnTop(false)
     , m_currentWindowLabel(nullptr)
     , m_targetWindowCombo(nullptr)
     , m_refreshWindowsBtn(nullptr)
@@ -63,7 +59,9 @@ MainWindow::MainWindow(QWidget* parent)
     , m_clickEngine(std::make_shared<ClickEngine>(m_platformAdapter))
 {
     setupUI();
-    setupHotkeys();
+    // Delay hotkey registration until window is fully shown
+    // This ensures the window handle is properly realized for RegisterHotKey
+    QTimer::singleShot(100, this, &MainWindow::setupHotkeys);
     setupClickEngine();
     setupWindowUpdateTimer();
 
@@ -168,8 +166,7 @@ void MainWindow::setupUI()
     mainLayout->addLayout(contentLayout);
     setCentralWidget(centralWidget);
 
-    // Set default: window stay on top enabled
-    m_stayOnTopCheck->setChecked(true);
+    // Window stay on top - ALWAYS enabled, no UI control needed
     setWindowStayOnTop(true);
 }
 
@@ -234,25 +231,20 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_clickTypeCombo->addItem("长按", "hold");
     m_clickTypeCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    // 点击方法（无干扰/模拟鼠标）
-    QLabel* clickMethodLabel = new QLabel("点击方法:", this);
-    clickMethodLabel->setStyleSheet("color: #333;");
-    m_clickMethodCombo = new QComboBox(this);
-    m_clickMethodCombo->addItem("无干扰 (推荐)", static_cast<int>(ClickMethod::NoInterference));
-    m_clickMethodCombo->addItem("模拟鼠标", static_cast<int>(ClickMethod::SimulateMouse));
-    m_clickMethodCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
-
-    // 点击间隔
-    QLabel* intervalLabel = new QLabel("间隔 (ms):", this);
+    // 点击间隔 + 随机化 (合并选项)
+    QLabel* intervalLabel = new QLabel("间隔:", this);
     intervalLabel->setStyleSheet("color: #333;");
 
     m_intervalSpin = new QSpinBox(this);
     m_intervalSpin->setRange(1, 10000);
     m_intervalSpin->setValue(100);
+    m_intervalSpin->setSuffix(" ms");
     m_intervalSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    m_randomJitterCheck = new QCheckBox("随机扰动", this);
-    m_randomJitterCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
+    // 随机化 (合并：间隔扰动 + 位置偏移)
+    m_randomizeCheck = new QCheckBox("随机化", this);
+    m_randomizeCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
+    m_randomizeCheck->setToolTip("启用后，点击间隔和位置会有轻微随机变化，模拟真实操作");
 
     m_jitterRangeSpin = new QSpinBox(this);
     m_jitterRangeSpin->setRange(1, 500);
@@ -261,11 +253,12 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_jitterRangeSpin->setEnabled(false);
     m_jitterRangeSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    connect(m_randomJitterCheck, &QCheckBox::toggled, m_jitterRangeSpin, &QSpinBox::setEnabled);
+    connect(m_randomizeCheck, &QCheckBox::toggled, m_jitterRangeSpin, &QSpinBox::setEnabled);
 
     QHBoxLayout* intervalLayout = new QHBoxLayout();
     intervalLayout->addWidget(m_intervalSpin);
-    intervalLayout->addWidget(m_randomJitterCheck);
+    intervalLayout->addWidget(m_randomizeCheck);
+    intervalLayout->addWidget(new QLabel("±", this));
     intervalLayout->addWidget(m_jitterRangeSpin);
 
     // 点击次数
@@ -277,27 +270,15 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_countSpin->setSpecialValueText("无限");
     m_countSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    // 防检测
-    m_antiDetectCheck = new QCheckBox("🛡 防检测随机化", this);
-    m_antiDetectCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
-
-    // 窗口置顶
-    m_stayOnTopCheck = new QCheckBox("🔝 窗口置顶", this);
-    m_stayOnTopCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
-    connect(m_stayOnTopCheck, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
-
+    // Layout - simplified (4 rows)
     layout->addWidget(buttonLabel, 0, 0);
     layout->addWidget(m_buttonCombo, 0, 1);
     layout->addWidget(clickTypeLabel, 1, 0);
     layout->addWidget(m_clickTypeCombo, 1, 1);
-    layout->addWidget(clickMethodLabel, 2, 0);
-    layout->addWidget(m_clickMethodCombo, 2, 1);
-    layout->addWidget(intervalLabel, 3, 0);
-    layout->addLayout(intervalLayout, 3, 1);
-    layout->addWidget(countLabel, 4, 0);
-    layout->addWidget(m_countSpin, 4, 1);
-    layout->addWidget(m_antiDetectCheck, 5, 0, 1, 2);
-    layout->addWidget(m_stayOnTopCheck, 6, 0, 1, 2);
+    layout->addWidget(intervalLabel, 2, 0);
+    layout->addLayout(intervalLayout, 2, 1);
+    layout->addWidget(countLabel, 3, 0);
+    layout->addWidget(m_countSpin, 3, 1);
 
     return group;
 }
@@ -445,12 +426,11 @@ ClickConfig MainWindow::getConfig() const
     config.targetY = m_targetY;
     config.buttonType = m_buttonCombo->currentData().toString();
     config.clickType = m_clickTypeCombo->currentData().toString();
-    config.clickMethod = static_cast<ClickMethod>(m_clickMethodCombo->currentData().toInt());
+    // Removed: clickMethod - always NoInterference now
     config.intervalBase = m_intervalSpin->value();
-    config.useRandomJitter = m_randomJitterCheck->isChecked();
+    config.useRandomize = m_randomizeCheck->isChecked();  // Combined randomization
     config.jitterRange = m_jitterRangeSpin->value();
     config.clickCount = m_countSpin->value();
-    config.antiDetect = m_antiDetectCheck->isChecked();
 
     // Use stored sequence points
     config.sequencePoints = m_sequencePoints;
@@ -490,10 +470,14 @@ void MainWindow::applyConfigToEngine()
     m_clickEngine->setSequence(config.sequencePoints);
     m_clickEngine->setButton(getButtonFromConfig());
     m_clickEngine->setAction(getActionFromConfig());
-    m_clickEngine->setInterval(config.intervalBase, config.useRandomJitter ? config.jitterRange : 0);
+    m_clickEngine->setInterval(config.intervalBase, config.useRandomize ? config.jitterRange : 0);
     m_clickEngine->setClickCount(config.clickCount);
-    m_clickEngine->setAntiDetect(config.antiDetect);
-    m_clickEngine->setClickMethod(config.clickMethod);
+
+    // Combined randomization: useRandomize now controls both interval and position
+    m_clickEngine->setAntiDetect(config.useRandomize);
+
+    // ALWAYS use NoInterference method (background click)
+    m_clickEngine->setClickMethod(ClickMethod::NoInterference);
 
     // Set window binding
     m_clickEngine->setTargetWindow(m_targetWindowId);
@@ -572,11 +556,7 @@ void MainWindow::onEngineFinished()
     statusBar()->showMessage("已完成 | 总点击: " + QString::number(m_clickEngine->getTotalClicks()));
 }
 
-void MainWindow::onStayOnTopToggled(bool enabled)
-{
-    m_stayOnTop = enabled;
-    setWindowStayOnTop(enabled);
-}
+// Removed: onStayOnTopToggled - stay on top is now always enabled
 
 void MainWindow::setWindowStayOnTop(bool enabled)
 {
@@ -679,6 +659,7 @@ void MainWindow::updateCurrentWindow()
     if (!m_platformAdapter) return;
 
     QString displayText;
+    bool isMinimized = false;
 
     if (m_clickEngine->isRunning()) {
         // During running: show the window being clicked
@@ -686,6 +667,12 @@ void MainWindow::updateCurrentWindow()
         if (targetWindow != 0) {
             std::wstring title = m_platformAdapter->getWindowTitleW(targetWindow);
             displayText = QString::fromWCharArray(title.c_str());
+
+            // Check if window is minimized
+            isMinimized = m_platformAdapter->isWindowMinimized(targetWindow);
+            if (isMinimized) {
+                displayText += " [最小化]";
+            }
         } else {
             displayText = "无绑定窗口";
         }
@@ -703,6 +690,13 @@ void MainWindow::updateCurrentWindow()
         displayText = displayText.left(30) + "...";
     }
     m_currentWindowLabel->setText(QString("当前窗口: %1").arg(displayText));
+
+    // Update style based on minimized state
+    if (isMinimized) {
+        m_currentWindowLabel->setStyleSheet("font-size: 12px; color: #f44336; padding: 5px; background: #ffebee; border-radius: 4px;");
+    } else {
+        m_currentWindowLabel->setStyleSheet("font-size: 12px; color: #666; padding: 5px; background: #f9f9f9; border-radius: 4px;");
+    }
 }
 
 void MainWindow::onRefreshWindowsClicked()

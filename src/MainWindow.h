@@ -24,10 +24,9 @@ struct ClickConfig {
     QString clickType = "single";
     int intervalBase = 100;       // Base interval in ms
     int jitterRange = 10;         // Jitter range in ms (+/-)
-    bool useRandomJitter = false; // Enable random jitter
+    bool useRandomize = false;    // Combined: interval jitter + position offset
     int clickCount = -1;
-    bool antiDetect = false;
-    ClickMethod clickMethod = ClickMethod::NoInterference;  // Default to no interference
+    // Removed: clickMethod (always NoInterference), antiDetect (merged into useRandomize)
 };
 
 class MainWindow : public QMainWindow
@@ -53,7 +52,7 @@ private slots:
     void onRefreshWindowsClicked();
     void onTargetWindowSelected(int index);
     void onFindElementClicked();
-    void onStayOnTopToggled(bool enabled);
+    // Removed: onStayOnTopToggled - stay on top is now always enabled
     void updateMousePosition();
     void updateCurrentWindow();
     void onClickPerformed(int x, int y, uintptr_t windowId);
@@ -95,13 +94,13 @@ private:
 
     QComboBox* m_buttonCombo;
     QComboBox* m_clickTypeCombo;
-    QComboBox* m_clickMethodCombo;     // Click method (SendMessage/SendInput)
+    // Removed: m_clickMethodCombo - always use NoInterference
     QSpinBox* m_intervalSpin;           // Base interval
-    QCheckBox* m_randomJitterCheck;     // Enable random jitter
-    QSpinBox* m_jitterRangeSpin;        // Jitter range (+/- ms)
+    QCheckBox* m_randomizeCheck;        // Combined: interval jitter + position offset
+    QSpinBox* m_jitterRangeSpin;        // Randomize range (+/- ms)
     QSpinBox* m_countSpin;
-    QCheckBox* m_antiDetectCheck;
-    QCheckBox* m_stayOnTopCheck;        // Window stay on top
+    // Removed: m_antiDetectCheck - merged into m_randomizeCheck
+    // Removed: m_stayOnTopCheck - always enabled now
 
     QLabel* m_positionLabel;
     QSpinBox* m_manualXSpin;        // Manual X coordinate input
