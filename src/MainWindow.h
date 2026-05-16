@@ -23,7 +23,7 @@ struct ClickConfig {
     QString clickType = "single";
     int intervalMin = 100;
     int intervalMax = 100;
-    int clickCount = -1;  // -1 means infinite
+    int clickCount = -1;
     bool antiDetect = false;
 };
 
@@ -72,13 +72,11 @@ private:
     QLabel* m_statusLabel;
     QLabel* m_clickCountLabel;
 
-    // Mode selection
     QRadioButton* m_fixedPosRadio;
     QRadioButton* m_followCursorRadio;
     QRadioButton* m_sequenceRadio;
     QRadioButton* m_randomRadio;
 
-    // Config controls
     QComboBox* m_buttonCombo;
     QComboBox* m_clickTypeCombo;
     QSpinBox* m_intervalMinSpin;
@@ -86,7 +84,6 @@ private:
     QSpinBox* m_countSpin;
     QCheckBox* m_antiDetectCheck;
 
-    // Position controls
     QLabel* m_positionLabel;
     QPushButton* m_pickPosBtn;
     QPushButton* m_addSeqBtn;

@@ -73,7 +73,7 @@ void MainWindow::setupHotkeys()
         onPauseClicked();
     });
 
-    qDebug() << "Hotkeys registered: F6 (Start/Stop), F7 (Pause)";
+    qDebug() << "热键已注册: F6 (开始/停止), F7 (暂停)";
 #endif
 }
 
@@ -99,86 +99,116 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 
 void MainWindow::setupUI()
 {
+    // 设置窗口标题
+    setWindowTitle("通用连点器 v1.0");
+
     setupToolbar();
     setupStatusBar();
 
     QWidget* centralWidget = new QWidget(this);
-    QHBoxLayout* mainLayout = new QHBoxLayout(centralWidget);
+    centralWidget->setStyleSheet("background-color: #f5f5f5;");
+    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
+    mainLayout->setSpacing(10);
+    mainLayout->setContentsMargins(10, 10, 10, 10);
 
-    // Left panel: Mode selection
+    // 标题区域
+    QLabel* titleLabel = new QLabel("🎯 通用连点器", this);
+    titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; color: #333; padding: 10px;");
+    mainLayout->addWidget(titleLabel);
+
+    // 内容区域
+    QHBoxLayout* contentLayout = new QHBoxLayout();
+
+    // 左侧：模式选择
     QVBoxLayout* leftLayout = new QVBoxLayout();
     leftLayout->addWidget(createModeGroupBox());
     leftLayout->addStretch();
 
-    // Middle panel: Configuration
+    // 中间：配置
     QVBoxLayout* middleLayout = new QVBoxLayout();
     middleLayout->addWidget(createConfigGroupBox());
 
-    m_statusLabel = new QLabel("Ready", this);
+    // 状态显示
+    m_statusLabel = new QLabel("就绪", this);
     m_statusLabel->setAlignment(Qt::AlignCenter);
-    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #f0f0f0; border-radius: 5px;");
+    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #e0e0e0; border-radius: 8px; color: #555;");
     middleLayout->addWidget(m_statusLabel);
 
-    m_clickCountLabel = new QLabel("Clicks: 0", this);
+    m_clickCountLabel = new QLabel("点击次数: 0", this);
     m_clickCountLabel->setAlignment(Qt::AlignCenter);
+    m_clickCountLabel->setStyleSheet("font-size: 14px; color: #666;");
     middleLayout->addWidget(m_clickCountLabel);
 
     middleLayout->addStretch();
 
-    // Right panel: Position
+    // 右侧：坐标
     QVBoxLayout* rightLayout = new QVBoxLayout();
     rightLayout->addWidget(createPositionGroupBox());
     rightLayout->addStretch();
 
-    mainLayout->addLayout(leftLayout);
-    mainLayout->addLayout(middleLayout);
-    mainLayout->addLayout(rightLayout);
+    contentLayout->addLayout(leftLayout);
+    contentLayout->addLayout(middleLayout);
+    contentLayout->addLayout(rightLayout);
 
+    mainLayout->addLayout(contentLayout);
     setCentralWidget(centralWidget);
 }
 
 void MainWindow::setupToolbar()
 {
-    QToolBar* toolbar = addToolBar("Main Toolbar");
+    QToolBar* toolbar = addToolBar("主工具栏");
     toolbar->setMovable(false);
+    toolbar->setStyleSheet("QToolBar { background: #fff; border-bottom: 1px solid #ddd; padding: 5px; }");
 
-    m_startBtn = new QPushButton("Start", this);
-    m_startBtn->setStyleSheet("background-color: #4CAF50; color: white; padding: 8px 20px; font-size: 14px;");
-    m_startBtn->setMinimumWidth(80);
+    m_startBtn = new QPushButton("▶ 开始", this);
+    m_startBtn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; padding: 10px 25px; font-size: 14px; border-radius: 6px; border: none; } QPushButton:hover { background-color: #45a049; }");
+    m_startBtn->setMinimumWidth(100);
 
-    m_stopBtn = new QPushButton("Stop", this);
-    m_stopBtn->setStyleSheet("background-color: #f44336; color: white; padding: 8px 20px; font-size: 14px;");
-    m_stopBtn->setMinimumWidth(80);
+    m_stopBtn = new QPushButton("⏹ 停止", this);
+    m_stopBtn->setStyleSheet("QPushButton { background-color: #f44336; color: white; padding: 10px 25px; font-size: 14px; border-radius: 6px; border: none; } QPushButton:hover { background-color: #da190b; }");
+    m_stopBtn->setMinimumWidth(100);
 
-    m_pauseBtn = new QPushButton("Pause", this);
-    m_pauseBtn->setStyleSheet("background-color: #FF9800; color: white; padding: 8px 20px; font-size: 14px;");
-    m_pauseBtn->setMinimumWidth(80);
+    m_pauseBtn = new QPushButton("⏸ 暂停", this);
+    m_pauseBtn->setStyleSheet("QPushButton { background-color: #FF9800; color: white; padding: 10px 25px; font-size: 14px; border-radius: 6px; border: none; } QPushButton:hover { background-color: #e68900; }");
+    m_pauseBtn->setMinimumWidth(100);
 
     connect(m_startBtn, &QPushButton::clicked, this, &MainWindow::onStartClicked);
     connect(m_stopBtn, &QPushButton::clicked, this, &MainWindow::onStopClicked);
     connect(m_pauseBtn, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
 
     toolbar->addWidget(m_startBtn);
+    toolbar->addWidget(new QWidget());  // spacer
     toolbar->addWidget(m_stopBtn);
+    toolbar->addWidget(new QWidget());  // spacer
     toolbar->addWidget(m_pauseBtn);
 }
 
 void MainWindow::setupStatusBar()
 {
-    statusBar()->showMessage("Ready | Hotkey: F6 Start/Stop | F7 Pause");
+    statusBar()->setStyleSheet("QStatusBar { background: #fff; color: #666; }");
+    statusBar()->showMessage("就绪 | 热键: F6 开始/停止 | F7 暂停");
 }
 
 QGroupBox* MainWindow::createModeGroupBox()
 {
-    QGroupBox* group = new QGroupBox("Click Mode", this);
+    QGroupBox* group = new QGroupBox("点击模式", this);
+    group->setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #ddd; border-radius: 8px; margin-top: 10px; padding-top: 10px; background: #fff; } QGroupBox::title { subcontrol-origin: margin; left: 10px; color: #333; }");
     QVBoxLayout* layout = new QVBoxLayout(group);
+    layout->setSpacing(8);
 
-    m_fixedPosRadio = new QRadioButton("Fixed Position", this);
+    m_fixedPosRadio = new QRadioButton("📍 固定位置", this);
     m_fixedPosRadio->setChecked(true);
+    m_fixedPosRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
 
-    m_followCursorRadio = new QRadioButton("Follow Cursor", this);
-    m_sequenceRadio = new QRadioButton("Sequence", this);
-    m_randomRadio = new QRadioButton("Random Area", this);
+    m_followCursorRadio = new QRadioButton("🖱 跟随鼠标", this);
+    m_followCursorRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
+
+    m_sequenceRadio = new QRadioButton("📋 序列点击", this);
+    m_sequenceRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
+
+    m_randomRadio = new QRadioButton("🎲 随机区域", this);
+    m_randomRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
 
     connect(m_fixedPosRadio, &QRadioButton::toggled, this, &MainWindow::onModeChanged);
     connect(m_followCursorRadio, &QRadioButton::toggled, this, &MainWindow::onModeChanged);
@@ -195,41 +225,60 @@ QGroupBox* MainWindow::createModeGroupBox()
 
 QGroupBox* MainWindow::createConfigGroupBox()
 {
-    QGroupBox* group = new QGroupBox("Configuration", this);
+    QGroupBox* group = new QGroupBox("参数配置", this);
+    group->setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #ddd; border-radius: 8px; margin-top: 10px; padding-top: 10px; background: #fff; } QGroupBox::title { subcontrol-origin: margin; left: 10px; color: #333; }");
     QGridLayout* layout = new QGridLayout(group);
+    layout->setSpacing(8);
 
-    QLabel* buttonLabel = new QLabel("Click Button:", this);
+    // 点击按键
+    QLabel* buttonLabel = new QLabel("点击按键:", this);
+    buttonLabel->setStyleSheet("color: #333;");
     m_buttonCombo = new QComboBox(this);
-    m_buttonCombo->addItem("Left", "left");
-    m_buttonCombo->addItem("Right", "right");
-    m_buttonCombo->addItem("Middle", "middle");
+    m_buttonCombo->addItem("左键", "left");
+    m_buttonCombo->addItem("右键", "right");
+    m_buttonCombo->addItem("中键", "middle");
+    m_buttonCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    QLabel* clickTypeLabel = new QLabel("Click Type:", this);
+    // 点击方式
+    QLabel* clickTypeLabel = new QLabel("点击方式:", this);
+    clickTypeLabel->setStyleSheet("color: #333;");
     m_clickTypeCombo = new QComboBox(this);
-    m_clickTypeCombo->addItem("Single", "single");
-    m_clickTypeCombo->addItem("Double", "double");
-    m_clickTypeCombo->addItem("Triple", "triple");
-    m_clickTypeCombo->addItem("Hold", "hold");
+    m_clickTypeCombo->addItem("单击", "single");
+    m_clickTypeCombo->addItem("双击", "double");
+    m_clickTypeCombo->addItem("三击", "triple");
+    m_clickTypeCombo->addItem("长按", "hold");
+    m_clickTypeCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    QLabel* intervalLabel = new QLabel("Interval (ms):", this);
+    // 点击间隔
+    QLabel* intervalLabel = new QLabel("间隔 (ms):", this);
+    intervalLabel->setStyleSheet("color: #333;");
     QHBoxLayout* intervalLayout = new QHBoxLayout();
     m_intervalMinSpin = new QSpinBox(this);
     m_intervalMinSpin->setRange(1, 10000);
     m_intervalMinSpin->setValue(100);
+    m_intervalMinSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
     m_intervalMaxSpin = new QSpinBox(this);
     m_intervalMaxSpin->setRange(1, 10000);
     m_intervalMaxSpin->setValue(100);
+    m_intervalMaxSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+    QLabel* dashLabel = new QLabel("-", this);
+    dashLabel->setAlignment(Qt::AlignCenter);
     intervalLayout->addWidget(m_intervalMinSpin);
-    intervalLayout->addWidget(new QLabel("-", this));
+    intervalLayout->addWidget(dashLabel);
     intervalLayout->addWidget(m_intervalMaxSpin);
 
-    QLabel* countLabel = new QLabel("Click Count:", this);
+    // 点击次数
+    QLabel* countLabel = new QLabel("点击次数:", this);
+    countLabel->setStyleSheet("color: #333;");
     m_countSpin = new QSpinBox(this);
     m_countSpin->setRange(-1, 1000000);
     m_countSpin->setValue(-1);
-    m_countSpin->setSpecialValueText("Infinite");
+    m_countSpin->setSpecialValueText("无限");
+    m_countSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    m_antiDetectCheck = new QCheckBox("Anti-Detection", this);
+    // 防检测
+    m_antiDetectCheck = new QCheckBox("🛡 防检测随机化", this);
+    m_antiDetectCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
 
     layout->addWidget(buttonLabel, 0, 0);
     layout->addWidget(m_buttonCombo, 0, 1);
@@ -246,29 +295,41 @@ QGroupBox* MainWindow::createConfigGroupBox()
 
 QGroupBox* MainWindow::createPositionGroupBox()
 {
-    QGroupBox* group = new QGroupBox("Position", this);
+    QGroupBox* group = new QGroupBox("坐标选取", this);
+    group->setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #ddd; border-radius: 8px; margin-top: 10px; padding-top: 10px; background: #fff; } QGroupBox::title { subcontrol-origin: margin; left: 10px; color: #333; }");
     QVBoxLayout* layout = new QVBoxLayout(group);
+    layout->setSpacing(8);
 
-    m_positionLabel = new QLabel("Current: (0, 0)", this);
-    m_positionLabel->setStyleSheet("font-size: 12px;");
+    // 当前坐标显示
+    m_positionLabel = new QLabel("当前坐标: (0, 0)", this);
+    m_positionLabel->setStyleSheet("font-size: 13px; color: #666; padding: 5px; background: #f9f9f9; border-radius: 4px;");
     layout->addWidget(m_positionLabel);
 
-    m_pickPosBtn = new QPushButton("Pick Position", this);
-    m_pickPosBtn->setStyleSheet("padding: 10px;");
+    // 选取坐标按钮
+    m_pickPosBtn = new QPushButton("📍 选取坐标", this);
+    m_pickPosBtn->setStyleSheet("QPushButton { padding: 10px; background: #2196F3; color: white; border-radius: 6px; border: none; } QPushButton:hover { background: #1976D2; }");
     connect(m_pickPosBtn, &QPushButton::clicked, this, &MainWindow::onPickPositionClicked);
     layout->addWidget(m_pickPosBtn);
 
+    // 序列操作
     QHBoxLayout* seqBtnLayout = new QHBoxLayout();
-    m_addSeqBtn = new QPushButton("Add to Seq", this);
-    m_clearSeqBtn = new QPushButton("Clear Seq", this);
+    m_addSeqBtn = new QPushButton("➕ 添加序列", this);
+    m_addSeqBtn->setStyleSheet("QPushButton { padding: 8px; background: #4CAF50; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #45a049; }");
+    m_addSeqBtn->setEnabled(false);
+    m_clearSeqBtn = new QPushButton("🗑 清除序列", this);
+    m_clearSeqBtn->setStyleSheet("QPushButton { padding: 8px; background: #9E9E9E; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #757575; }");
+    m_clearSeqBtn->setEnabled(false);
     connect(m_addSeqBtn, &QPushButton::clicked, this, &MainWindow::onAddToSequenceClicked);
     connect(m_clearSeqBtn, &QPushButton::clicked, this, &MainWindow::onClearSequenceClicked);
     seqBtnLayout->addWidget(m_addSeqBtn);
     seqBtnLayout->addWidget(m_clearSeqBtn);
     layout->addLayout(seqBtnLayout);
 
+    // 序列列表
     m_sequenceList = new QListWidget(this);
-    m_sequenceList->setMaximumHeight(150);
+    m_sequenceList->setMaximumHeight(120);
+    m_sequenceList->setEnabled(false);
+    m_sequenceList->setStyleSheet("QListWidget { border: 1px solid #ddd; border-radius: 4px; background: #fafafa; } QListWidget::item { padding: 5px; }");
     layout->addWidget(m_sequenceList);
 
     return group;
@@ -351,7 +412,7 @@ void MainWindow::updateMousePosition()
 {
     if (m_platformAdapter) {
         QPoint pos = m_platformAdapter->getMousePosition();
-        m_positionLabel->setText(QString("Current: (%1, %2)").arg(pos.x()).arg(pos.y()));
+        m_positionLabel->setText(QString("当前坐标: (%1, %2)").arg(pos.x()).arg(pos.y()));
     }
 }
 
@@ -361,7 +422,7 @@ void MainWindow::onPickPositionClicked()
         QPoint pos = m_platformAdapter->getMousePosition();
         m_targetX = pos.x();
         m_targetY = pos.y();
-        m_positionLabel->setText(QString("Target: (%1, %2)").arg(pos.x()).arg(pos.y()));
+        m_positionLabel->setText(QString("目标坐标: (%1, %2)").arg(pos.x()).arg(pos.y()));
     }
 }
 
@@ -384,20 +445,20 @@ void MainWindow::onStartClicked()
     applyConfigToEngine();
     m_clickEngine->start();
 
-    m_statusLabel->setText("Running...");
-    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 5px;");
-    m_clickCountLabel->setText("Clicks: 0");
-    statusBar()->showMessage("Running | Press F6 to stop");
+    m_statusLabel->setText("▶ 运行中...");
+    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 8px; color: #2e7d32;");
+    m_clickCountLabel->setText("点击次数: 0");
+    statusBar()->showMessage("运行中 | 按 F6 停止");
 }
 
 void MainWindow::onStopClicked()
 {
     m_clickEngine->stop();
 
-    m_statusLabel->setText("Stopped");
-    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffcdd2; border-radius: 5px;");
-    m_clickCountLabel->setText(QString("Clicks: %1").arg(m_clickEngine->getTotalClicks()));
-    statusBar()->showMessage("Stopped | Total clicks: " + QString::number(m_clickEngine->getTotalClicks()));
+    m_statusLabel->setText("⏹ 已停止");
+    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffcdd2; border-radius: 8px; color: #c62828;");
+    m_clickCountLabel->setText(QString("点击次数: %1").arg(m_clickEngine->getTotalClicks()));
+    statusBar()->showMessage("已停止 | 总点击: " + QString::number(m_clickEngine->getTotalClicks()));
 }
 
 void MainWindow::onPauseClicked()
@@ -405,14 +466,14 @@ void MainWindow::onPauseClicked()
     if (m_clickEngine->isRunning()) {
         if (m_clickEngine->isPaused()) {
             m_clickEngine->resume();
-            m_statusLabel->setText("Running...");
-            m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 5px;");
-            statusBar()->showMessage("Running | Press F6 to stop");
+            m_statusLabel->setText("▶ 运行中...");
+            m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 8px; color: #2e7d32;");
+            statusBar()->showMessage("运行中 | 按 F6 停止");
         } else {
             m_clickEngine->pause();
-            m_statusLabel->setText("Paused");
-            m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffe0b2; border-radius: 5px;");
-            statusBar()->showMessage("Paused | Press F7 to resume");
+            m_statusLabel->setText("⏸ 已暂停");
+            m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffe0b2; border-radius: 8px; color: #e65100;");
+            statusBar()->showMessage("已暂停 | 按 F7 继续");
         }
     }
 }
@@ -420,13 +481,13 @@ void MainWindow::onPauseClicked()
 void MainWindow::onClickPerformed(int x, int y)
 {
     int total = m_clickEngine->getTotalClicks();
-    m_clickCountLabel->setText(QString("Clicks: %1").arg(total));
+    m_clickCountLabel->setText(QString("点击次数: %1").arg(total));
 }
 
 void MainWindow::onEngineFinished()
 {
-    m_statusLabel->setText("Finished");
-    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #e3f2fd; border-radius: 5px;");
-    m_clickCountLabel->setText(QString("Clicks: %1").arg(m_clickEngine->getTotalClicks()));
-    statusBar()->showMessage("Finished | Total clicks: " + QString::number(m_clickEngine->getTotalClicks()));
+    m_statusLabel->setText("✅ 已完成");
+    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #bbdefb; border-radius: 8px; color: #1565c0;");
+    m_clickCountLabel->setText(QString("点击次数: %1").arg(m_clickEngine->getTotalClicks()));
+    statusBar()->showMessage("已完成 | 总点击: " + QString::number(m_clickEngine->getTotalClicks()));
 }
