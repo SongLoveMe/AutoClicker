@@ -11,6 +11,7 @@
 #include <QListWidget>
 #include <QLineEdit>
 #include <QTimer>
+#include <QDateTime>  // v2.2: for recording time intervals
 #include <memory>
 #include "core/PlatformAdapter.h"
 #include "core/ClickEngine.h"
@@ -26,7 +27,7 @@ struct ClickConfig {
     int jitterRange = 10;         // Jitter range in ms (+/-)
     bool useRandomize = false;    // Combined: interval jitter + position offset
     int clickCount = -1;
-    // Removed: clickMethod (always NoInterference), antiDetect (merged into useRandomize)
+    ClickMethod clickMethod = ClickMethod::NoInterference;  // v2.2: restored for game compatibility
 };
 
 class MainWindow : public QMainWindow
@@ -94,7 +95,7 @@ private:
 
     QComboBox* m_buttonCombo;
     QComboBox* m_clickTypeCombo;
-    // Removed: m_clickMethodCombo - always use NoInterference
+    QComboBox* m_clickMethodCombo;  // v2.2: restored for game compatibility
     QSpinBox* m_intervalSpin;           // Base interval
     QCheckBox* m_randomizeCheck;        // Combined: interval jitter + position offset
     QSpinBox* m_jitterRangeSpin;        // Randomize range (+/- ms)
@@ -109,6 +110,7 @@ private:
     QPushButton* m_recordBtn;       // Record mode toggle button
     QLabel* m_recordStatusLabel;    // Recording status label
     bool m_isRecording = false;
+    QDateTime m_lastRecordTime;  // v2.2: for calculating interval between recorded points
 
     // Sequence editing buttons
     QPushButton* m_deleteSeqBtn;    // Delete selected item

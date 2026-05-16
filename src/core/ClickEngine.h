@@ -25,6 +25,7 @@ public:
     void setClickMethod(ClickMethod method);
     void setTargetWindow(uintptr_t windowId);
     void setTargetElement(const ElementInfo& element);
+    void setAutoStopOnWindowLost(bool enabled);  // v2.2: auto-stop when target window closes
 
     void start();
     void stop();
@@ -40,6 +41,7 @@ signals:
     void clickPerformed(int x, int y, uintptr_t windowId);  // Include window ID
     void finished();
     void errorOccurred(const QString& error);
+    void windowLost(uintptr_t windowId, const QString& windowTitle);  // v2.2: window closed signal
 
 private slots:
     void performClick();
@@ -75,6 +77,7 @@ private:
 
     bool m_running = false;
     bool m_paused = false;
+    bool m_autoStopOnWindowLost = true;  // v2.2: auto-stop when window closes (default enabled)
     int m_totalClicks = 0;
     int m_currentCount = 0;
 };

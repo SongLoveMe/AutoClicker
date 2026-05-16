@@ -74,6 +74,11 @@ void ClickEngine::setTargetElement(const ElementInfo& element)
     m_hasTargetElement = (element.windowId != 0);
 }
 
+void ClickEngine::setAutoStopOnWindowLost(bool enabled)
+{
+    m_autoStopOnWindowLost = enabled;
+}
+
 void ClickEngine::start()
 {
     if (m_running) {
@@ -149,7 +154,7 @@ uintptr_t ClickEngine::getCurrentTargetWindowId() const
 
 void ClickEngine::performClick()
 {
-    // Stop timer to calculate next interval
+    // Stop timer during click execution
     m_timer->stop();
 
     // Check if we've reached the click count limit
@@ -159,11 +164,17 @@ void ClickEngine::performClick()
         return;
     }
 
+    // Check running state (may have been stopped during async wait)
+    if (!m_running || m_paused) {
+        return;
+    }
+
     // Determine click position based on mode
     int clickX = m_targetX;
     int clickY = m_targetY;
     uintptr_t clickWindowId = m_targetWindowId;
     MouseButton clickButton = m_button;
+    int nextInterval = getRandomInterval();  // Default interval
 
     // If we have a target element, use its position
     if (m_hasTargetElement) {
@@ -218,17 +229,18 @@ void ClickEngine::performClick()
                 }
                 {
                     SequencePoint pt = getNextSequencePoint();
-                    clickButton = toMouseButton(pt.button);  // Use per-point button (convert type)
+                    clickButton = toMouseButton(pt.button);  // Use per-point button
+
+                    // v2.2: Use per-point interval if specified
+                    if (pt.intervalMs > 0) {
+                        nextInterval = pt.intervalMs;
+                    }
 
                     // Use per-point window binding
                     if (pt.windowId != 0) {
-                        // Use getWindowPlacementInfo for proper position handling
-                        // This works correctly for minimized/maximized windows
                         WindowInfo winInfo = m_platform->getWindowPlacementInfo(pt.windowId);
 
-                        // Verify window still exists (check if title matches)
                         if (winInfo.id == pt.windowId || winInfo.title == pt.windowTitle) {
-                            // Check if window is minimized
                             bool isMinimized = m_platform->isWindowMinimized(pt.windowId);
                             if (isMinimized) {
                                 qDebug() << "Target window is minimized, using restored position";
@@ -238,14 +250,23 @@ void ClickEngine::performClick()
                             clickY = winInfo.y + pt.relY;
                             clickWindowId = pt.windowId;
                         } else {
-                            // Window might have changed, fallback to absolute coordinates
+                            // v2.2: Window has been closed - emit signal and optionally stop
+                            QString windowTitleStr = QString::fromWCharArray(pt.windowTitle.c_str());
+                            emit windowLost(pt.windowId, windowTitleStr);
+
+                            if (m_autoStopOnWindowLost) {
+                                stop();
+                                emit errorOccurred(QString("窗口已关闭: %1").arg(windowTitleStr));
+                                return;
+                            }
+
+                            // If not auto-stopping, fall back to absolute coordinates
                             clickX = pt.screenX;
                             clickY = pt.screenY;
                             clickWindowId = 0;
                             qDebug() << "Window binding lost, using absolute coords";
                         }
                     } else {
-                        // No window binding, use absolute screen coordinates
                         clickX = pt.screenX;
                         clickY = pt.screenY;
                     }
@@ -259,12 +280,10 @@ void ClickEngine::performClick()
                 break;
 
             case ClickMode::RandomArea:
-                // TODO: Implement random area mode
                 qWarning() << "Random area mode not implemented yet";
                 break;
 
             case ClickMode::Drag:
-                // TODO: Implement drag mode
                 qWarning() << "Drag mode not implemented yet";
                 break;
         }
@@ -275,21 +294,16 @@ void ClickEngine::performClick()
 
     // Perform the click
     if (m_platform) {
-        // If we have a target element and using no-interference, click directly on element
         if (m_hasTargetElement && m_clickMethod == ClickMethod::NoInterference) {
             m_platform->clickElement(m_targetElement.windowId, clickButton, m_action);
         } else if (m_clickMethod == ClickMethod::NoInterference && clickWindowId != 0) {
-            // Use window-bound no-interference - send directly to target window
-            // Use getWindowPlacementInfo for correct position (handles minimized windows)
             WindowInfo winInfo = m_platform->getWindowPlacementInfo(clickWindowId);
             int relX = clickX - winInfo.x;
             int relY = clickY - winInfo.y;
             m_platform->simulateClickToWindow(clickWindowId, relX, relY, clickButton, m_action);
         } else if (m_clickMethod == ClickMethod::NoInterference) {
-            // Use no-interference click method (no window binding)
             m_platform->simulateClickNoInterference(clickX, clickY, clickButton, m_action, ClickMethod::NoInterference);
         } else {
-            // Use traditional SendInput method
             m_platform->simulateClick(clickX, clickY, clickButton, m_action);
         }
         m_totalClicks++;
@@ -297,9 +311,13 @@ void ClickEngine::performClick()
         emit clickPerformed(clickX, clickY, clickWindowId);
     }
 
-    // Calculate next interval and restart timer
-    int nextInterval = getRandomInterval();
-    m_timer->start(nextInterval);
+    // v2.2: Use QTimer::singleShot for non-blocking next click
+    // This allows hotkeys to be processed during wait period
+    QTimer::singleShot(nextInterval, this, [this]() {
+        if (m_running && !m_paused) {
+            performClick();
+        }
+    });
 }
 
 int ClickEngine::getRandomInterval()

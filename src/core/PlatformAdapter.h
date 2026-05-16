@@ -65,6 +65,7 @@ struct SequencePoint {
 
     // User customization
     QString userLabel;              // Optional custom label (e.g., "Button OK")
+    int intervalMs = 0;             // v2.2: Per-point interval (0 = use global)
 };
 
 struct RecordedClick {

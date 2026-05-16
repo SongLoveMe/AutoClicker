@@ -2,7 +2,7 @@
 
 一个基于 Qt 6 开发的跨平台自动点击工具，支持多种点击模式和自定义配置。
 
-![版本](https://img.shields.io/badge/version-2.1-blue)
+![版本](https://img.shields.io/badge/version-2.2-blue)
 ![语言](https://img.shields.io/badge/language-C++17-orange)
 ![框架](https://img.shields.io/badge/framework-Qt%206.5.3-green)
 ![许可](https://img.shields.io/badge/license-MIT-purple)
@@ -247,14 +247,7 @@ AutoClicker/
 
 ## 🗺 开发计划
 
-### v2.1 规划
-
-- [ ] 完善窗口绑定深层问题（某些应用不响应 PostMessage）
-- [ ] 完善随机区域模式
-- [ ] 实现拖拽模式
-- [ ] 添加配置保存/加载菜单
-
-### v2.2 规划
+### v2.3 规划
 
 - [ ] 图像识别触发
 - [ ] Linux/macOS平台适配
@@ -301,6 +294,26 @@ SOFTWARE.
 ---
 
 ## 📝 更新日志
+
+### v2.2 (2026-05-16)
+
+**🎮 游戏兼容性修复**
+- ✅ 点击方法恢复 - 恢复点击方法选择（无干扰/模拟鼠标）
+- ✅ 游戏支持 - 饥荒联机版等使用Raw Input的游戏，选择"模拟鼠标"模式即可正常点击
+
+**说明**
+- "无干扰"模式使用SendMessage，适用于普通应用（Web、QQ等）
+- "模拟鼠标"模式使用SendInput，适用于游戏（饥荒联机版等使用DirectInput/Raw Input的游戏）
+- "模拟鼠标"会物理移动鼠标，可能干扰用户操作
+
+**🐛 Bug修复**
+- ✅ 热键响应 - 移除 SendMessageTimeoutW 的 SMTO_BLOCK 标志，消息发送期间线程不再阻塞，可响应热键
+
+**🆕 新功能**
+- ✅ 序列点独立间隔 - 每个序列点可设置独立的点击间隔时长
+- ✅ 录制自动记录间隔 - 录制时自动计算相邻点的时间差作为间隔
+- ✅ 右键菜单设置间隔 - 序列列表右键菜单添加"设置间隔"选项
+- ✅ 窗口关闭自动停止 - 序列点绑定的窗口关闭后，连点器自动停止并显示警告
 
 ### v2.1 (2026-05-16)
 

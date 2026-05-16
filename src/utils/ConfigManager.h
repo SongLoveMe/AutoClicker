@@ -16,7 +16,7 @@ struct AppConfig {
     ClickMode mode = ClickMode::FixedPosition;
     MouseButton button = MouseButton::Left;
     ClickAction action = ClickAction::Single;
-    // Removed: clickMethod - always NoInterference now
+    ClickMethod clickMethod = ClickMethod::NoInterference;  // v2.2: restored for game compatibility
     int intervalBase = 100;       // Base interval in ms
     int jitterRange = 10;         // Jitter range in ms (+/-)
     bool useRandomize = false;    // Combined: interval jitter + position offset

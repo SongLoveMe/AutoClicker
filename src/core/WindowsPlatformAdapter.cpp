@@ -20,6 +20,16 @@ WindowsPlatformAdapter::~WindowsPlatformAdapter()
     }
 }
 
+// v2.2: Non-blocking wait that processes Qt events during delay
+// This allows hotkeys to be processed while waiting for click timing
+void WindowsPlatformAdapter::nonBlockingWait(int ms)
+{
+    if (ms <= 0) return;
+    QEventLoop loop;
+    QTimer::singleShot(ms, &loop, &QEventLoop::quit);
+    loop.exec();
+}
+
 void WindowsPlatformAdapter::simulateClick(int x, int y, MouseButton button, ClickAction action, int holdDuration)
 {
     // Move to position first
@@ -67,9 +77,9 @@ void WindowsPlatformAdapter::simulateClick(int x, int y, MouseButton button, Cli
         SendInput(1, &inputDown, sizeof(INPUT));
 
         if (action == ClickAction::Hold) {
-            Sleep(holdDuration);
+            nonBlockingWait(holdDuration);  // v2.2: non-blocking wait
         } else {
-            Sleep(10);
+            nonBlockingWait(10);  // v2.2: non-blocking wait
         }
 
         // Mouse up
@@ -79,7 +89,7 @@ void WindowsPlatformAdapter::simulateClick(int x, int y, MouseButton button, Cli
         SendInput(1, &inputUp, sizeof(INPUT));
 
         if (i < clickCount - 1) {
-            Sleep(50);
+            nonBlockingWait(50);  // v2.2: non-blocking wait between clicks
         }
     }
 }
@@ -165,19 +175,19 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
 
     for (int i = 0; i < clickCount; ++i) {
         SendMessageTimeoutW(topLevelWindow, downMsg, wParam, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
         SendMessageTimeoutW(topLevelWindow, upMsg, 0, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
 
         if (i < clickCount - 1) {
-            QThread::msleep(50);  // Use Qt's thread sleep
+            nonBlockingWait(50);  // v2.2: non-blocking wait for hotkey responsiveness
         }
     }
 
     // For double-click, also send WM_LBUTTONDBLCLK
     if (action == ClickAction::Double && button == MouseButton::Left) {
         SendMessageTimeoutW(topLevelWindow, WM_LBUTTONDBLCLK, wParam, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
     }
 }
 
@@ -223,23 +233,23 @@ void WindowsPlatformAdapter::simulateClickToWindow(uintptr_t windowId, int relX,
 
     for (int i = 0; i < clickCount; ++i) {
         SendMessageTimeoutW(hwnd, downMsg, wParam, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
         SendMessageTimeoutW(hwnd, upMsg, 0, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
 
         if (action == ClickAction::Hold) {
-            QThread::msleep(100);
+            nonBlockingWait(100);  // v2.2: non-blocking wait
         }
 
         if (i < clickCount - 1) {
-            QThread::msleep(50);
+            nonBlockingWait(50);  // v2.2: non-blocking wait
         }
     }
 
     // For double-click, also send WM_LBUTTONDBLCLK
     if (action == ClickAction::Double && button == MouseButton::Left) {
         SendMessageTimeoutW(hwnd, WM_LBUTTONDBLCLK, wParam, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
     }
 }
 
@@ -681,7 +691,7 @@ void WindowsPlatformAdapter::highlightWindow(uintptr_t windowId, int durationMs)
 
     // Restore and cleanup after delay using a timer approach
     // We need to keep the highlight visible for durationMs
-    QThread::msleep(durationMs);
+    nonBlockingWait(durationMs);  // v2.2: non-blocking wait
 
     // Force window to redraw to remove our highlight
     SelectObject(hdc, hOldPen);
@@ -793,16 +803,16 @@ void WindowsPlatformAdapter::clickElement(uintptr_t elementId, MouseButton butto
     DWORD_PTR result;
     for (int i = 0; i < clickCount; ++i) {
         SendMessageTimeoutW(hwnd, downMsg, wParam, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
         SendMessageTimeoutW(hwnd, upMsg, 0, lParam,
-                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+                           SMTO_ABORTIFHUNG, 100, &result);
 
         if (action == ClickAction::Hold) {
-            QThread::msleep(100);
+            nonBlockingWait(100);  // v2.2: non-blocking wait
         }
 
         if (i < clickCount - 1) {
-            QThread::msleep(50);
+            nonBlockingWait(50);  // v2.2: non-blocking wait
         }
     }
 }

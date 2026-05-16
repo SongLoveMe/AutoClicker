@@ -3,6 +3,7 @@
         "mode": 0,
         "button": 0,
         "action": 0,
+        "clickMethod": 0,
         "intervalBase": 200,
         "jitterRange": 10,
         "useRandomize": false,

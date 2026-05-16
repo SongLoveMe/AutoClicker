@@ -4,6 +4,8 @@
 #include "PlatformAdapter.h"
 #include <QHash>
 #include <QWidget>
+#include <QEventLoop>
+#include <QTimer>
 #include <windows.h>
 #include <psapi.h>
 
@@ -47,6 +49,7 @@ public:
 
 private:
     void sendMouseEvent(DWORD flags, DWORD data = 0);
+    void nonBlockingWait(int ms);  // v2.2: non-blocking wait that processes Qt events
     DWORD mapMouseButton(MouseButton button);
     int mapKeyToVirtualKey(int key);
     int mapModifiersToModFlags(int modifiers);

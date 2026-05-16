@@ -13,6 +13,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QDialog>
+#include <QInputDialog>  // v2.2: for interval setting dialog
 #include <QMenu>
 
 #ifdef Q_OS_WIN
@@ -98,6 +99,17 @@ void MainWindow::setupClickEngine()
 {
     connect(m_clickEngine.get(), &ClickEngine::clickPerformed, this, &MainWindow::onClickPerformed);
     connect(m_clickEngine.get(), &ClickEngine::finished, this, &MainWindow::onEngineFinished);
+
+    // v2.2: Connect window lost and error signals
+    connect(m_clickEngine.get(), &ClickEngine::windowLost, this, [this](uintptr_t windowId, const QString& title) {
+        statusBar()->showMessage(QString("警告: 窗口已关闭 - %1").arg(title), 5000);
+    });
+
+    connect(m_clickEngine.get(), &ClickEngine::errorOccurred, this, [this](const QString& error) {
+        m_statusLabel->setText("⚠ " + error);
+        m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffcdd2; border-radius: 8px; color: #c62828;");
+        statusBar()->showMessage("错误: " + error, 5000);
+    });
 }
 
 bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
@@ -231,6 +243,15 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_clickTypeCombo->addItem("长按", "hold");
     m_clickTypeCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
+    // 点击方法 (v2.2: restored for game compatibility)
+    QLabel* clickMethodLabel = new QLabel("点击方法:", this);
+    clickMethodLabel->setStyleSheet("color: #333;");
+    m_clickMethodCombo = new QComboBox(this);
+    m_clickMethodCombo->addItem("无干扰", static_cast<int>(ClickMethod::NoInterference));
+    m_clickMethodCombo->addItem("模拟鼠标", static_cast<int>(ClickMethod::SimulateMouse));
+    m_clickMethodCombo->setToolTip("无干扰: 不影响鼠标操作，适用于普通应用\n模拟鼠标: 物理移动鼠标，适用于游戏");
+    m_clickMethodCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+
     // 点击间隔 + 随机化 (合并选项)
     QLabel* intervalLabel = new QLabel("间隔:", this);
     intervalLabel->setStyleSheet("color: #333;");
@@ -270,15 +291,17 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_countSpin->setSpecialValueText("无限");
     m_countSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
-    // Layout - simplified (4 rows)
+    // Layout - 5 rows (v2.2: added click method row)
     layout->addWidget(buttonLabel, 0, 0);
     layout->addWidget(m_buttonCombo, 0, 1);
     layout->addWidget(clickTypeLabel, 1, 0);
     layout->addWidget(m_clickTypeCombo, 1, 1);
-    layout->addWidget(intervalLabel, 2, 0);
-    layout->addLayout(intervalLayout, 2, 1);
-    layout->addWidget(countLabel, 3, 0);
-    layout->addWidget(m_countSpin, 3, 1);
+    layout->addWidget(clickMethodLabel, 2, 0);
+    layout->addWidget(m_clickMethodCombo, 2, 1);
+    layout->addWidget(intervalLabel, 3, 0);
+    layout->addLayout(intervalLayout, 3, 1);
+    layout->addWidget(countLabel, 4, 0);
+    layout->addWidget(m_countSpin, 4, 1);
 
     return group;
 }
@@ -426,7 +449,7 @@ ClickConfig MainWindow::getConfig() const
     config.targetY = m_targetY;
     config.buttonType = m_buttonCombo->currentData().toString();
     config.clickType = m_clickTypeCombo->currentData().toString();
-    // Removed: clickMethod - always NoInterference now
+    config.clickMethod = static_cast<ClickMethod>(m_clickMethodCombo->currentData().toInt());  // v2.2: restored
     config.intervalBase = m_intervalSpin->value();
     config.useRandomize = m_randomizeCheck->isChecked();  // Combined randomization
     config.jitterRange = m_jitterRangeSpin->value();
@@ -476,8 +499,8 @@ void MainWindow::applyConfigToEngine()
     // Combined randomization: useRandomize now controls both interval and position
     m_clickEngine->setAntiDetect(config.useRandomize);
 
-    // ALWAYS use NoInterference method (background click)
-    m_clickEngine->setClickMethod(ClickMethod::NoInterference);
+    // Use user-selected click method (v2.2: restored for game compatibility)
+    m_clickEngine->setClickMethod(config.clickMethod);
 
     // Set window binding
     m_clickEngine->setTargetWindow(m_targetWindowId);
@@ -593,6 +616,8 @@ void MainWindow::onRecordToggled(bool enabled)
     if (enabled) {
         // Start recording - use mouse hook
         // Note: Mouse hook already filters clicks inside AutoClicker window
+        m_lastRecordTime = QDateTime();  // v2.2: Reset time for first point interval calculation
+
         bool success = m_platformAdapter->startMouseHook([this](const RecordedClick& click) {
             onMouseClickRecorded(click);
         });
@@ -625,6 +650,16 @@ void MainWindow::onMouseClickRecorded(const RecordedClick& click)
     point.screenX = click.x;
     point.screenY = click.y;
     point.button = click.button;
+
+    // v2.2: Calculate interval from last recorded point
+    QDateTime now = QDateTime::currentDateTime();
+    if (!m_sequencePoints.isEmpty() && m_lastRecordTime.isValid()) {
+        // Calculate time difference in milliseconds
+        qint64 elapsedMs = m_lastRecordTime.msecsTo(now);
+        point.intervalMs = static_cast<int>(elapsedMs);
+        if (point.intervalMs < 0) point.intervalMs = 0;  // Sanity check
+    }
+    m_lastRecordTime = now;
 
     // Capture window information
     point.windowId = click.windowId;
@@ -862,10 +897,14 @@ void MainWindow::onSequenceContextMenuRequested(const QPoint& pos)
     QListWidgetItem* item = m_sequenceList->itemAt(pos);
     if (!item) return;
 
+    int index = m_sequenceList->row(item);
+    if (index < 0 || index >= m_sequencePoints.size()) return;
+
     QMenu menu(this);
     menu.setStyleSheet("QMenu { background: #fff; border: 1px solid #ddd; } QMenu::item { padding: 5px 20px; } QMenu::item:selected { background: #e3f2fd; }");
 
     QAction* editAction = menu.addAction("编辑坐标");
+    QAction* intervalAction = menu.addAction("设置间隔");  // v2.2: new option
     QAction* deleteAction = menu.addAction("删除");
     menu.addSeparator();
     QAction* moveUpAction = menu.addAction("上移");
@@ -874,6 +913,25 @@ void MainWindow::onSequenceContextMenuRequested(const QPoint& pos)
     connect(editAction, &QAction::triggered, this, [this]() {
         onSequenceItemDoubleClicked(m_sequenceList->currentItem());
     });
+
+    // v2.2: Handle interval setting
+    connect(intervalAction, &QAction::triggered, this, [this, index]() {
+        int currentInterval = m_sequencePoints[index].intervalMs;
+        QInputDialog dialog(this);
+        dialog.setWindowTitle("设置间隔");
+        dialog.setLabelText("点击间隔 (毫秒):");
+        dialog.setInputMode(QInputDialog::IntInput);
+        dialog.setIntRange(0, 60000);
+        dialog.setIntValue(currentInterval);
+        dialog.setIntStep(100);
+
+        if (dialog.exec() == QDialog::Accepted) {
+            int newInterval = dialog.intValue();
+            m_sequencePoints[index].intervalMs = newInterval;
+            updateSequenceListDisplay();
+        }
+    });
+
     connect(deleteAction, &QAction::triggered, this, &MainWindow::onDeleteSequenceItemClicked);
     connect(moveUpAction, &QAction::triggered, this, &MainWindow::onMoveSequenceItemUp);
     connect(moveDownAction, &QAction::triggered, this, &MainWindow::onMoveSequenceItemDown);
@@ -902,10 +960,19 @@ void MainWindow::updateSequenceListDisplay()
             windowLabel = "无窗口";
         }
 
-        QString itemText = QString("[%1] (%2, %3) - %4")
+        // v2.2: Format interval (only show if > 0)
+        QString intervalText;
+        if (point.intervalMs > 0) {
+            intervalText = QString("%1ms").arg(point.intervalMs);
+        } else {
+            intervalText = "默认";  // Use global interval
+        }
+
+        QString itemText = QString("[%1] (%2, %3) %4 - %5")
             .arg(buttonIcon)
             .arg(point.screenX)
             .arg(point.screenY)
+            .arg(intervalText)
             .arg(windowLabel);
 
         m_sequenceList->addItem(itemText);

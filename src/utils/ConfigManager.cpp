@@ -103,7 +103,7 @@ QJsonObject ConfigManager::toJson() const
     clickSettings["mode"] = static_cast<int>(m_config.mode);
     clickSettings["button"] = static_cast<int>(m_config.button);
     clickSettings["action"] = static_cast<int>(m_config.action);
-    // Removed: clickMethod - always NoInterference
+    clickSettings["clickMethod"] = static_cast<int>(m_config.clickMethod);  // v2.2: restored
     clickSettings["intervalBase"] = m_config.intervalBase;
     clickSettings["jitterRange"] = m_config.jitterRange;
     clickSettings["useRandomize"] = m_config.useRandomize;  // Combined option
@@ -157,7 +157,7 @@ void ConfigManager::fromJson(const QJsonObject& json)
         m_config.mode = static_cast<ClickMode>(click["mode"].toInt(0));
         m_config.button = static_cast<MouseButton>(click["button"].toInt(0));
         m_config.action = static_cast<ClickAction>(click["action"].toInt(0));
-        // Removed: clickMethod - always NoInterference
+        m_config.clickMethod = static_cast<ClickMethod>(click["clickMethod"].toInt(static_cast<int>(ClickMethod::NoInterference)));  // v2.2: restored
         // Handle legacy config files with old field names
         if (click.contains("useRandomize")) {
             m_config.useRandomize = click["useRandomize"].toBool(false);
