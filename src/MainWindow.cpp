@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QMouseEvent>
 #include <QDebug>
+#include <QRegularExpression>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -38,13 +39,14 @@ MainWindow::MainWindow(QWidget* parent)
     , m_addSeqBtn(nullptr)
     , m_clearSeqBtn(nullptr)
     , m_sequenceList(nullptr)
-    , m_isRunning(false)
-    , m_isPaused(false)
-    , m_totalClicks(0)
-    , m_platformAdapter(std::make_unique<WindowsPlatformAdapter>())
+    , m_targetX(0)
+    , m_targetY(0)
+    , m_platformAdapter(std::make_shared<WindowsPlatformAdapter>())
+    , m_clickEngine(std::make_shared<ClickEngine>(m_platformAdapter))
 {
     setupUI();
     setupHotkeys();
+    setupClickEngine();
 
     // Timer for updating mouse position
     QTimer* mouseTimer = new QTimer(this);
@@ -59,22 +61,26 @@ MainWindow::~MainWindow()
 void MainWindow::setupHotkeys()
 {
 #ifdef Q_OS_WIN
-    // Register F6 for Start/Stop
     m_platformAdapter->registerHotkey(1, Qt::Key_F6, 0, [this]() {
-        if (m_isRunning) {
+        if (m_clickEngine->isRunning()) {
             onStopClicked();
         } else {
             onStartClicked();
         }
     });
 
-    // Register F7 for Pause/Resume
     m_platformAdapter->registerHotkey(2, Qt::Key_F7, 0, [this]() {
         onPauseClicked();
     });
 
     qDebug() << "Hotkeys registered: F6 (Start/Stop), F7 (Pause)";
 #endif
+}
+
+void MainWindow::setupClickEngine()
+{
+    connect(m_clickEngine.get(), &ClickEngine::clickPerformed, this, &MainWindow::onClickPerformed);
+    connect(m_clickEngine.get(), &ClickEngine::finished, this, &MainWindow::onEngineFinished);
 }
 
 bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
@@ -108,7 +114,6 @@ void MainWindow::setupUI()
     QVBoxLayout* middleLayout = new QVBoxLayout();
     middleLayout->addWidget(createConfigGroupBox());
 
-    // Status indicator
     m_statusLabel = new QLabel("Ready", this);
     m_statusLabel->setAlignment(Qt::AlignCenter);
     m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #f0f0f0; border-radius: 5px;");
@@ -193,14 +198,12 @@ QGroupBox* MainWindow::createConfigGroupBox()
     QGroupBox* group = new QGroupBox("Configuration", this);
     QGridLayout* layout = new QGridLayout(group);
 
-    // Click button type
     QLabel* buttonLabel = new QLabel("Click Button:", this);
     m_buttonCombo = new QComboBox(this);
     m_buttonCombo->addItem("Left", "left");
     m_buttonCombo->addItem("Right", "right");
     m_buttonCombo->addItem("Middle", "middle");
 
-    // Click type
     QLabel* clickTypeLabel = new QLabel("Click Type:", this);
     m_clickTypeCombo = new QComboBox(this);
     m_clickTypeCombo->addItem("Single", "single");
@@ -208,7 +211,6 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_clickTypeCombo->addItem("Triple", "triple");
     m_clickTypeCombo->addItem("Hold", "hold");
 
-    // Interval
     QLabel* intervalLabel = new QLabel("Interval (ms):", this);
     QHBoxLayout* intervalLayout = new QHBoxLayout();
     m_intervalMinSpin = new QSpinBox(this);
@@ -221,17 +223,14 @@ QGroupBox* MainWindow::createConfigGroupBox()
     intervalLayout->addWidget(new QLabel("-", this));
     intervalLayout->addWidget(m_intervalMaxSpin);
 
-    // Click count
     QLabel* countLabel = new QLabel("Click Count:", this);
     m_countSpin = new QSpinBox(this);
     m_countSpin->setRange(-1, 1000000);
     m_countSpin->setValue(-1);
     m_countSpin->setSpecialValueText("Infinite");
 
-    // Anti-detection
     m_antiDetectCheck = new QCheckBox("Anti-Detection", this);
 
-    // Layout
     layout->addWidget(buttonLabel, 0, 0);
     layout->addWidget(m_buttonCombo, 0, 1);
     layout->addWidget(clickTypeLabel, 1, 0);
@@ -250,18 +249,15 @@ QGroupBox* MainWindow::createPositionGroupBox()
     QGroupBox* group = new QGroupBox("Position", this);
     QVBoxLayout* layout = new QVBoxLayout(group);
 
-    // Current position display
     m_positionLabel = new QLabel("Current: (0, 0)", this);
     m_positionLabel->setStyleSheet("font-size: 12px;");
     layout->addWidget(m_positionLabel);
 
-    // Pick position button
     m_pickPosBtn = new QPushButton("Pick Position", this);
     m_pickPosBtn->setStyleSheet("padding: 10px;");
     connect(m_pickPosBtn, &QPushButton::clicked, this, &MainWindow::onPickPositionClicked);
     layout->addWidget(m_pickPosBtn);
 
-    // Sequence controls
     QHBoxLayout* seqBtnLayout = new QHBoxLayout();
     m_addSeqBtn = new QPushButton("Add to Seq", this);
     m_clearSeqBtn = new QPushButton("Clear Seq", this);
@@ -271,7 +267,6 @@ QGroupBox* MainWindow::createPositionGroupBox()
     seqBtnLayout->addWidget(m_clearSeqBtn);
     layout->addLayout(seqBtnLayout);
 
-    // Sequence list
     m_sequenceList = new QListWidget(this);
     m_sequenceList->setMaximumHeight(150);
     layout->addWidget(m_sequenceList);
@@ -282,16 +277,9 @@ QGroupBox* MainWindow::createPositionGroupBox()
 ClickConfig MainWindow::getConfig() const
 {
     ClickConfig config;
-
-    if (m_fixedPosRadio->isChecked())
-        config.mode = ClickMode::FixedPosition;
-    else if (m_followCursorRadio->isChecked())
-        config.mode = ClickMode::FollowCursor;
-    else if (m_sequenceRadio->isChecked())
-        config.mode = ClickMode::Sequence;
-    else if (m_randomRadio->isChecked())
-        config.mode = ClickMode::RandomArea;
-
+    config.mode = getModeFromConfig();
+    config.targetX = m_targetX;
+    config.targetY = m_targetY;
     config.buttonType = m_buttonCombo->currentData().toString();
     config.clickType = m_clickTypeCombo->currentData().toString();
     config.intervalMin = m_intervalMinSpin->value();
@@ -299,7 +287,56 @@ ClickConfig MainWindow::getConfig() const
     config.clickCount = m_countSpin->value();
     config.antiDetect = m_antiDetectCheck->isChecked();
 
+    // Get sequence points
+    for (int i = 0; i < m_sequenceList->count(); ++i) {
+        QString text = m_sequenceList->item(i)->text();
+        QRegularExpression re("\\((\\d+), (\\d+)\\)");
+        QRegularExpressionMatch match = re.match(text);
+        if (match.hasMatch()) {
+            config.sequencePoints.append(QPoint(match.captured(1).toInt(), match.captured(2).toInt()));
+        }
+    }
+
     return config;
+}
+
+ClickMode MainWindow::getModeFromConfig() const
+{
+    if (m_fixedPosRadio->isChecked()) return ClickMode::FixedPosition;
+    if (m_followCursorRadio->isChecked()) return ClickMode::FollowCursor;
+    if (m_sequenceRadio->isChecked()) return ClickMode::Sequence;
+    if (m_randomRadio->isChecked()) return ClickMode::RandomArea;
+    return ClickMode::Drag;
+}
+
+MouseButton MainWindow::getButtonFromConfig() const
+{
+    QString button = m_buttonCombo->currentData().toString();
+    if (button == "left") return MouseButton::Left;
+    if (button == "right") return MouseButton::Right;
+    return MouseButton::Middle;
+}
+
+ClickAction MainWindow::getActionFromConfig() const
+{
+    QString action = m_clickTypeCombo->currentData().toString();
+    if (action == "single") return ClickAction::Single;
+    if (action == "double") return ClickAction::Double;
+    if (action == "triple") return ClickAction::Triple;
+    return ClickAction::Hold;
+}
+
+void MainWindow::applyConfigToEngine()
+{
+    ClickConfig config = getConfig();
+    m_clickEngine->setMode(config.mode);
+    m_clickEngine->setPosition(config.targetX, config.targetY);
+    m_clickEngine->setSequence(config.sequencePoints);
+    m_clickEngine->setButton(getButtonFromConfig());
+    m_clickEngine->setAction(getActionFromConfig());
+    m_clickEngine->setInterval(config.intervalMin, config.intervalMax);
+    m_clickEngine->setClickCount(config.clickCount);
+    m_clickEngine->setAntiDetect(config.antiDetect);
 }
 
 void MainWindow::onModeChanged()
@@ -322,6 +359,8 @@ void MainWindow::onPickPositionClicked()
 {
     if (m_platformAdapter) {
         QPoint pos = m_platformAdapter->getMousePosition();
+        m_targetX = pos.x();
+        m_targetY = pos.y();
         m_positionLabel->setText(QString("Target: (%1, %2)").arg(pos.x()).arg(pos.y()));
     }
 }
@@ -342,43 +381,52 @@ void MainWindow::onClearSequenceClicked()
 
 void MainWindow::onStartClicked()
 {
-    m_isRunning = true;
-    m_isPaused = false;
-    m_totalClicks = 0;
+    applyConfigToEngine();
+    m_clickEngine->start();
+
     m_statusLabel->setText("Running...");
     m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 5px;");
     m_clickCountLabel->setText("Clicks: 0");
     statusBar()->showMessage("Running | Press F6 to stop");
-
-    // Test click at current position
-    if (m_platformAdapter) {
-        QPoint pos = m_platformAdapter->getMousePosition();
-        m_platformAdapter->simulateClick(pos.x(), pos.y(), MouseButton::Left, ClickAction::Single);
-    }
 }
 
 void MainWindow::onStopClicked()
 {
-    m_isRunning = false;
-    m_isPaused = false;
+    m_clickEngine->stop();
+
     m_statusLabel->setText("Stopped");
     m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffcdd2; border-radius: 5px;");
-    m_clickCountLabel->setText(QString("Clicks: %1").arg(m_totalClicks));
-    statusBar()->showMessage("Stopped | Total clicks: " + QString::number(m_totalClicks));
+    m_clickCountLabel->setText(QString("Clicks: %1").arg(m_clickEngine->getTotalClicks()));
+    statusBar()->showMessage("Stopped | Total clicks: " + QString::number(m_clickEngine->getTotalClicks()));
 }
 
 void MainWindow::onPauseClicked()
 {
-    if (m_isRunning) {
-        m_isPaused = !m_isPaused;
-        if (m_isPaused) {
-            m_statusLabel->setText("Paused");
-            m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffe0b2; border-radius: 5px;");
-            statusBar()->showMessage("Paused | Press F7 to resume");
-        } else {
+    if (m_clickEngine->isRunning()) {
+        if (m_clickEngine->isPaused()) {
+            m_clickEngine->resume();
             m_statusLabel->setText("Running...");
             m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 5px;");
             statusBar()->showMessage("Running | Press F6 to stop");
+        } else {
+            m_clickEngine->pause();
+            m_statusLabel->setText("Paused");
+            m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #ffe0b2; border-radius: 5px;");
+            statusBar()->showMessage("Paused | Press F7 to resume");
         }
     }
+}
+
+void MainWindow::onClickPerformed(int x, int y)
+{
+    int total = m_clickEngine->getTotalClicks();
+    m_clickCountLabel->setText(QString("Clicks: %1").arg(total));
+}
+
+void MainWindow::onEngineFinished()
+{
+    m_statusLabel->setText("Finished");
+    m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #e3f2fd; border-radius: 5px;");
+    m_clickCountLabel->setText(QString("Clicks: %1").arg(m_clickEngine->getTotalClicks()));
+    statusBar()->showMessage("Finished | Total clicks: " + QString::number(m_clickEngine->getTotalClicks()));
 }

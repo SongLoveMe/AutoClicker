@@ -15,12 +15,14 @@ set(SOURCES
     src/main.cpp
     src/MainWindow.cpp
     src/core/WindowsPlatformAdapter.cpp
+    src/core/ClickEngine.cpp
 )
 
 set(HEADERS
     src/MainWindow.h
     src/core/PlatformAdapter.h
     src/core/WindowsPlatformAdapter.h
+    src/core/ClickEngine.h
 )
 
 # Create executable

@@ -19,6 +19,14 @@ enum class ClickAction {
     Hold
 };
 
+enum class ClickMode {
+    FixedPosition,
+    FollowCursor,
+    Sequence,
+    RandomArea,
+    Drag
+};
+
 struct WindowInfo {
     uintptr_t id;
     std::string title;

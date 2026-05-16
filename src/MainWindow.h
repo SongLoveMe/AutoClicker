@@ -12,14 +12,7 @@
 #include <QListWidget>
 #include <memory>
 #include "core/PlatformAdapter.h"
-
-enum class ClickMode {
-    FixedPosition,
-    FollowCursor,
-    Sequence,
-    RandomArea,
-    Drag
-};
+#include "core/ClickEngine.h"
 
 struct ClickConfig {
     ClickMode mode = ClickMode::FixedPosition;
@@ -56,15 +49,22 @@ private slots:
     void onClearSequenceClicked();
     void onModeChanged();
     void updateMousePosition();
+    void onClickPerformed(int x, int y);
+    void onEngineFinished();
 
 private:
     void setupUI();
     void setupToolbar();
     void setupStatusBar();
     void setupHotkeys();
+    void setupClickEngine();
+    void applyConfigToEngine();
     QGroupBox* createModeGroupBox();
     QGroupBox* createConfigGroupBox();
     QGroupBox* createPositionGroupBox();
+    MouseButton getButtonFromConfig() const;
+    ClickAction getActionFromConfig() const;
+    ClickMode getModeFromConfig() const;
 
     QPushButton* m_startBtn;
     QPushButton* m_stopBtn;
@@ -92,12 +92,11 @@ private:
     QPushButton* m_addSeqBtn;
     QPushButton* m_clearSeqBtn;
     QListWidget* m_sequenceList;
+    int m_targetX;
+    int m_targetY;
 
-    bool m_isRunning;
-    bool m_isPaused;
-    int m_totalClicks;
-
-    std::unique_ptr<PlatformAdapter> m_platformAdapter;
+    std::shared_ptr<PlatformAdapter> m_platformAdapter;
+    std::shared_ptr<ClickEngine> m_clickEngine;
 };
 
 #endif // MAINWINDOW_H
