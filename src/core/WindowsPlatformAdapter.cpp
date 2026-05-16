@@ -10,6 +10,9 @@ WindowsPlatformAdapter::WindowsPlatformAdapter()
 
 WindowsPlatformAdapter::~WindowsPlatformAdapter()
 {
+    // Stop mouse hook if active
+    stopMouseHook();
+
     // Unregister all hotkeys
     for (auto it = m_hotkeyCallbacks.begin(); it != m_hotkeyCallbacks.end(); ++it) {
         UnregisterHotKey(m_hwnd, it.key());
@@ -337,4 +340,201 @@ int WindowsPlatformAdapter::mapModifiersToModFlags(int modifiers)
     if (modifiers & Qt::MetaModifier) mod |= MOD_WIN;
 
     return mod;
+}
+
+// Static member initialization
+WindowsPlatformAdapter* WindowsPlatformAdapter::s_instance = nullptr;
+
+// Mouse hook implementation
+LRESULT CALLBACK WindowsPlatformAdapter::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode >= 0 && s_instance && s_instance->m_mouseHookCallback) {
+        MSLLHOOKSTRUCT* info = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+
+        RecordedButton button = RecordedButton::Left;
+        bool isClick = false;
+
+        if (wParam == WM_LBUTTONDOWN) {
+            button = RecordedButton::Left;
+            isClick = true;
+        } else if (wParam == WM_RBUTTONDOWN) {
+            button = RecordedButton::Right;
+            isClick = true;
+        } else if (wParam == WM_MBUTTONDOWN) {
+            button = RecordedButton::Middle;
+            isClick = true;
+        }
+
+        if (isClick) {
+            RecordedClick click;
+            click.x = info->pt.x;
+            click.y = info->pt.y;
+            click.button = button;
+            s_instance->m_mouseHookCallback(click);
+        }
+    }
+
+    return CallNextHookEx(s_instance->m_mouseHook, nCode, wParam, lParam);
+}
+
+bool WindowsPlatformAdapter::startMouseHook(std::function<void(const RecordedClick&)> callback)
+{
+    if (m_mouseHook) {
+        qWarning() << "Mouse hook already active";
+        return false;
+    }
+
+    m_mouseHookCallback = callback;
+    s_instance = this;
+
+    m_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, GetModuleHandle(nullptr), 0);
+    if (!m_mouseHook) {
+        qWarning() << "Failed to set mouse hook, error:" << GetLastError();
+        s_instance = nullptr;
+        m_mouseHookCallback = nullptr;
+        return false;
+    }
+
+    qDebug() << "Mouse hook started";
+    return true;
+}
+
+void WindowsPlatformAdapter::stopMouseHook()
+{
+    if (m_mouseHook) {
+        UnhookWindowsHookEx(m_mouseHook);
+        m_mouseHook = nullptr;
+        s_instance = nullptr;
+        m_mouseHookCallback = nullptr;
+        qDebug() << "Mouse hook stopped";
+    }
+}
+
+// Additional window operations
+uintptr_t WindowsPlatformAdapter::getForegroundWindowId()
+{
+    return reinterpret_cast<uintptr_t>(GetForegroundWindow());
+}
+
+std::string WindowsPlatformAdapter::getWindowTitle(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    char title[256];
+    GetWindowTextA(hwnd, title, sizeof(title));
+    return std::string(title);
+}
+
+QPoint WindowsPlatformAdapter::getWindowPosition(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+    return QPoint(rect.left, rect.top);
+}
+
+ElementInfo WindowsPlatformAdapter::findElementByText(uintptr_t windowId, const std::string& text)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    ElementInfo result;
+    result.windowId = 0;
+
+    // Context structure for EnumChildWindows callback
+    struct FindContext {
+        const std::string& searchText;
+        ElementInfo* result;
+    } context{text, &result};
+
+    // Enumerate child windows to find matching element
+    EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
+        auto* ctx = reinterpret_cast<FindContext*>(lParam);
+
+        char windowText[256];
+        GetWindowTextA(child, windowText, sizeof(windowText));
+
+        std::string elementText(windowText);
+        if (elementText == ctx->searchText || elementText.find(ctx->searchText) != std::string::npos) {
+            // Found matching element
+            RECT rect;
+            GetWindowRect(child, &rect);
+
+            // Get parent window position for relative coordinates
+            HWND parent = GetParent(child);
+            if (!parent) parent = GetAncestor(child, GA_PARENT);
+            RECT parentRect;
+            GetWindowRect(parent, &parentRect);
+
+            ctx->result->windowId = reinterpret_cast<uintptr_t>(child);
+            ctx->result->text = windowText;
+            ctx->result->relativeX = rect.left - parentRect.left;
+            ctx->result->relativeY = rect.top - parentRect.top;
+            ctx->result->width = rect.right - rect.left;
+            ctx->result->height = rect.bottom - rect.top;
+
+            char className[256];
+            GetClassNameA(child, className, sizeof(className));
+            ctx->result->className = className;
+
+            return FALSE;  // Stop enumeration
+        }
+        return TRUE;  // Continue enumeration
+    }, reinterpret_cast<LPARAM>(&context));
+
+    return result;
+}
+
+void WindowsPlatformAdapter::clickElement(uintptr_t elementId, MouseButton button, ClickAction action)
+{
+    HWND hwnd = reinterpret_cast<HWND>(elementId);
+    if (!hwnd) return;
+
+    // Get element dimensions for center click
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+    int centerX = (rect.right - rect.left) / 2;
+    int centerY = (rect.bottom - rect.top) / 2;
+
+    WPARAM wParam = 0;
+    UINT downMsg, upMsg;
+
+    switch (button) {
+        case MouseButton::Left:
+            wParam = MK_LBUTTON;
+            downMsg = WM_LBUTTONDOWN;
+            upMsg = WM_LBUTTONUP;
+            break;
+        case MouseButton::Right:
+            wParam = MK_RBUTTON;
+            downMsg = WM_RBUTTONDOWN;
+            upMsg = WM_RBUTTONUP;
+            break;
+        case MouseButton::Middle:
+            wParam = MK_MBUTTON;
+            downMsg = WM_MBUTTONDOWN;
+            upMsg = WM_MBUTTONUP;
+            break;
+    }
+
+    LPARAM lParam = MAKELPARAM(centerX, centerY);
+
+    int clickCount = 1;
+    switch (action) {
+        case ClickAction::Single: clickCount = 1; break;
+        case ClickAction::Double: clickCount = 2; break;
+        case ClickAction::Triple: clickCount = 3; break;
+        case ClickAction::Hold: clickCount = 1; break;
+    }
+
+    for (int i = 0; i < clickCount; ++i) {
+        PostMessage(hwnd, downMsg, wParam, lParam);
+        Sleep(10);
+        PostMessage(hwnd, upMsg, 0, lParam);
+
+        if (action == ClickAction::Hold) {
+            Sleep(100);
+        }
+
+        if (i < clickCount - 1) {
+            Sleep(50);
+        }
+    }
 }

@@ -63,6 +63,17 @@ void ClickEngine::setClickMethod(ClickMethod method)
     m_clickMethod = method;
 }
 
+void ClickEngine::setTargetWindow(uintptr_t windowId)
+{
+    m_targetWindowId = windowId;
+}
+
+void ClickEngine::setTargetElement(const ElementInfo& element)
+{
+    m_targetElement = element;
+    m_hasTargetElement = (element.windowId != 0);
+}
+
 void ClickEngine::start()
 {
     if (m_running) {
@@ -141,64 +152,100 @@ void ClickEngine::performClick()
         return;
     }
 
-    // Determine click position based on mode
+    // Handle window binding - activate target window if specified
+    if (m_platform && m_targetWindowId != 0) {
+        m_platform->setForegroundWindow(m_targetWindowId);
+    }
+
+    // Determine click position based on mode and window binding
     int clickX = m_targetX;
     int clickY = m_targetY;
 
-    switch (m_mode) {
-        case ClickMode::FixedPosition:
-            if (m_antiDetect) {
-                QPoint offset = getRandomOffset();
-                clickX += offset.x();
-                clickY += offset.y();
-            }
-            break;
-
-        case ClickMode::FollowCursor:
-            if (m_platform) {
-                QPoint pos = m_platform->getMousePosition();
-                clickX = pos.x();
-                clickY = pos.y();
+    // If we have a target element, use its position
+    if (m_hasTargetElement) {
+        if (m_targetWindowId != 0) {
+            QPoint windowPos = m_platform->getWindowPosition(m_targetWindowId);
+            clickX = windowPos.x() + m_targetElement.relativeX + m_targetElement.width / 2;
+            clickY = windowPos.y() + m_targetElement.relativeY + m_targetElement.height / 2;
+        }
+        if (m_antiDetect) {
+            QPoint offset = getRandomOffset();
+            clickX += offset.x();
+            clickY += offset.y();
+        }
+    } else {
+        // Use standard position calculation based on mode
+        switch (m_mode) {
+            case ClickMode::FixedPosition:
+                // Check if we should use window-relative coordinates
+                if (m_targetWindowId != 0) {
+                    QPoint windowPos = m_platform->getWindowPosition(m_targetWindowId);
+                    clickX = windowPos.x() + m_targetX;
+                    clickY = windowPos.y() + m_targetY;
+                }
                 if (m_antiDetect) {
                     QPoint offset = getRandomOffset();
                     clickX += offset.x();
                     clickY += offset.y();
                 }
-            }
-            break;
+                break;
 
-        case ClickMode::Sequence:
-            if (m_sequencePoints.isEmpty()) {
-                qWarning() << "Sequence mode but no points defined";
-                stop();
-                return;
-            }
-            {
-                QPoint pt = getNextSequencePoint();
-                clickX = pt.x();
-                clickY = pt.y();
-                if (m_antiDetect) {
-                    QPoint offset = getRandomOffset();
-                    clickX += offset.x();
-                    clickY += offset.y();
+            case ClickMode::FollowCursor:
+                if (m_platform) {
+                    QPoint pos = m_platform->getMousePosition();
+                    clickX = pos.x();
+                    clickY = pos.y();
+                    if (m_antiDetect) {
+                        QPoint offset = getRandomOffset();
+                        clickX += offset.x();
+                        clickY += offset.y();
+                    }
                 }
-            }
-            break;
+                break;
 
-        case ClickMode::RandomArea:
-            // TODO: Implement random area mode
-            qWarning() << "Random area mode not implemented yet";
-            break;
+            case ClickMode::Sequence:
+                if (m_sequencePoints.isEmpty()) {
+                    qWarning() << "Sequence mode but no points defined";
+                    stop();
+                    return;
+                }
+                {
+                    QPoint pt = getNextSequencePoint();
+                    // Apply window binding to sequence points
+                    if (m_targetWindowId != 0) {
+                        QPoint windowPos = m_platform->getWindowPosition(m_targetWindowId);
+                        clickX = windowPos.x() + pt.x();
+                        clickY = windowPos.y() + pt.y();
+                    } else {
+                        clickX = pt.x();
+                        clickY = pt.y();
+                    }
+                    if (m_antiDetect) {
+                        QPoint offset = getRandomOffset();
+                        clickX += offset.x();
+                        clickY += offset.y();
+                    }
+                }
+                break;
 
-        case ClickMode::Drag:
-            // TODO: Implement drag mode
-            qWarning() << "Drag mode not implemented yet";
-            break;
+            case ClickMode::RandomArea:
+                // TODO: Implement random area mode
+                qWarning() << "Random area mode not implemented yet";
+                break;
+
+            case ClickMode::Drag:
+                // TODO: Implement drag mode
+                qWarning() << "Drag mode not implemented yet";
+                break;
+        }
     }
 
     // Perform the click
     if (m_platform) {
-        if (m_clickMethod == ClickMethod::NoInterference) {
+        // If we have a target element and using no-interference, click directly on element
+        if (m_hasTargetElement && m_clickMethod == ClickMethod::NoInterference) {
+            m_platform->clickElement(m_targetElement.windowId, m_button, m_action);
+        } else if (m_clickMethod == ClickMethod::NoInterference) {
             // Use no-interference click method
             m_platform->simulateClickNoInterference(clickX, clickY, m_button, m_action, ClickMethod::NoInterference);
         } else {

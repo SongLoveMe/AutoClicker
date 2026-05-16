@@ -23,6 +23,8 @@ public:
     void setClickCount(int count);  // -1 for infinite
     void setAntiDetect(bool enabled);
     void setClickMethod(ClickMethod method);
+    void setTargetWindow(uintptr_t windowId);
+    void setTargetElement(const ElementInfo& element);
 
     void start();
     void stop();
@@ -61,6 +63,11 @@ private:
     int m_jitterRange = 0;        // Jitter range (+/- ms), 0 means no jitter
     int m_clickCount = -1;
     bool m_antiDetect = false;
+
+    // Window binding
+    uintptr_t m_targetWindowId = 0;
+    ElementInfo m_targetElement;
+    bool m_hasTargetElement = false;
 
     bool m_running = false;
     bool m_paused = false;

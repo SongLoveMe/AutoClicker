@@ -10,6 +10,8 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QListWidget>
+#include <QLineEdit>
+#include <QTimer>
 #include <memory>
 #include "core/PlatformAdapter.h"
 #include "core/ClickEngine.h"
@@ -50,9 +52,15 @@ private slots:
     void onAddToSequenceClicked();
     void onClearSequenceClicked();
     void onAddManualCoordinateClicked();
+    void onRecordToggled(bool enabled);
+    void onMouseClickRecorded(const RecordedClick& click);
+    void onRefreshWindowsClicked();
+    void onTargetWindowSelected(int index);
+    void onFindElementClicked();
     void onModeChanged();
     void onStayOnTopToggled(bool enabled);
     void updateMousePosition();
+    void updateCurrentWindow();
     void onClickPerformed(int x, int y);
     void onEngineFinished();
 
@@ -62,11 +70,13 @@ private:
     void setupStatusBar();
     void setupHotkeys();
     void setupClickEngine();
+    void setupWindowUpdateTimer();
     void applyConfigToEngine();
     void setWindowStayOnTop(bool enabled);
     QGroupBox* createModeGroupBox();
     QGroupBox* createConfigGroupBox();
     QGroupBox* createPositionGroupBox();
+    QGroupBox* createTargetWindowGroupBox();
     MouseButton getButtonFromConfig() const;
     ClickAction getActionFromConfig() const;
     ClickMode getModeFromConfig() const;
@@ -97,12 +107,27 @@ private:
     QSpinBox* m_manualXSpin;        // Manual X coordinate input
     QSpinBox* m_manualYSpin;        // Manual Y coordinate input
     QPushButton* m_addManualBtn;    // Add manual coordinate button
+    QPushButton* m_recordBtn;       // Record mode toggle button
+    QLabel* m_recordStatusLabel;    // Recording status label
+    bool m_isRecording = false;
     QPushButton* m_addSeqBtn;
     QPushButton* m_clearSeqBtn;
     QListWidget* m_sequenceList;
     int m_targetX;
     int m_targetY;
     bool m_stayOnTop = false;
+
+    // Target window binding
+    QLabel* m_currentWindowLabel;
+    QComboBox* m_targetWindowCombo;
+    QPushButton* m_refreshWindowsBtn;
+    QLineEdit* m_elementTextEdit;
+    QPushButton* m_findElementBtn;
+    QLabel* m_elementInfoLabel;
+    uintptr_t m_targetWindowId = 0;
+    ElementInfo m_targetElement;
+    bool m_hasTargetElement = false;
+    QTimer* m_windowUpdateTimer;
 
     std::shared_ptr<PlatformAdapter> m_platformAdapter;
     std::shared_ptr<ClickEngine> m_clickEngine;

@@ -33,11 +33,30 @@ enum class ClickMethod {
     Auto             // Auto select based on situation
 };
 
+enum class RecordedButton {
+    Left,
+    Right,
+    Middle
+};
+
+struct RecordedClick {
+    int x, y;
+    RecordedButton button;
+};
+
 struct WindowInfo {
     uintptr_t id;
     std::string title;
     std::string processName;
     int x, y, width, height;
+};
+
+struct ElementInfo {
+    uintptr_t windowId;
+    std::string text;
+    std::string className;
+    int relativeX, relativeY;  // Position relative to parent window
+    int width, height;
 };
 
 class PlatformAdapter
@@ -60,6 +79,17 @@ public:
     virtual WindowInfo getActiveWindow() = 0;
     virtual std::vector<WindowInfo> listWindows() = 0;
     virtual bool setForegroundWindow(uintptr_t windowId) = 0;
+    virtual uintptr_t getForegroundWindowId() = 0;
+    virtual std::string getWindowTitle(uintptr_t windowId) = 0;
+    virtual QPoint getWindowPosition(uintptr_t windowId) = 0;
+
+    // Recording operations
+    virtual bool startMouseHook(std::function<void(const RecordedClick&)> callback) = 0;
+    virtual void stopMouseHook() = 0;
+
+    // Element finding operations
+    virtual ElementInfo findElementByText(uintptr_t windowId, const std::string& text) = 0;
+    virtual void clickElement(uintptr_t elementId, MouseButton button, ClickAction action) = 0;
 };
 
 #endif // PLATFORMADAPTER_H
