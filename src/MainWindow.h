@@ -10,6 +10,8 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QListWidget>
+#include <memory>
+#include "core/PlatformAdapter.h"
 
 enum class ClickMode {
     FixedPosition,
@@ -42,6 +44,9 @@ public:
 
     ClickConfig getConfig() const;
 
+protected:
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
+
 private slots:
     void onStartClicked();
     void onStopClicked();
@@ -56,6 +61,7 @@ private:
     void setupUI();
     void setupToolbar();
     void setupStatusBar();
+    void setupHotkeys();
     QGroupBox* createModeGroupBox();
     QGroupBox* createConfigGroupBox();
     QGroupBox* createPositionGroupBox();
@@ -90,6 +96,8 @@ private:
     bool m_isRunning;
     bool m_isPaused;
     int m_totalClicks;
+
+    std::unique_ptr<PlatformAdapter> m_platformAdapter;
 };
 
 #endif // MAINWINDOW_H

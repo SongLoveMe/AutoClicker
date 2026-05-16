@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "core/WindowsPlatformAdapter.h"
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -9,6 +10,11 @@
 #include <QTimer>
 #include <QApplication>
 #include <QMouseEvent>
+#include <QDebug>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -35,8 +41,10 @@ MainWindow::MainWindow(QWidget* parent)
     , m_isRunning(false)
     , m_isPaused(false)
     , m_totalClicks(0)
+    , m_platformAdapter(std::make_unique<WindowsPlatformAdapter>())
 {
     setupUI();
+    setupHotkeys();
 
     // Timer for updating mouse position
     QTimer* mouseTimer = new QTimer(this);
@@ -46,6 +54,41 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow()
 {
+}
+
+void MainWindow::setupHotkeys()
+{
+#ifdef Q_OS_WIN
+    // Register F6 for Start/Stop
+    m_platformAdapter->registerHotkey(1, Qt::Key_F6, 0, [this]() {
+        if (m_isRunning) {
+            onStopClicked();
+        } else {
+            onStartClicked();
+        }
+    });
+
+    // Register F7 for Pause/Resume
+    m_platformAdapter->registerHotkey(2, Qt::Key_F7, 0, [this]() {
+        onPauseClicked();
+    });
+
+    qDebug() << "Hotkeys registered: F6 (Start/Stop), F7 (Pause)";
+#endif
+}
+
+bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
+{
+#ifdef Q_OS_WIN
+    MSG* msg = static_cast<MSG*>(message);
+    if (msg->message == WM_HOTKEY) {
+        int hotkeyId = static_cast<int>(msg->wParam);
+        if (m_platformAdapter->handleHotkeyEvent(hotkeyId)) {
+            return true;
+        }
+    }
+#endif
+    return QMainWindow::nativeEvent(eventType, message, result);
 }
 
 void MainWindow::setupUI()
@@ -269,22 +312,27 @@ void MainWindow::onModeChanged()
 
 void MainWindow::updateMousePosition()
 {
-    QPoint pos = QCursor::pos();
-    m_positionLabel->setText(QString("Current: (%1, %2)").arg(pos.x()).arg(pos.y()));
+    if (m_platformAdapter) {
+        QPoint pos = m_platformAdapter->getMousePosition();
+        m_positionLabel->setText(QString("Current: (%1, %2)").arg(pos.x()).arg(pos.y()));
+    }
 }
 
 void MainWindow::onPickPositionClicked()
 {
-    // Simple implementation: just capture current position
-    QPoint pos = QCursor::pos();
-    m_positionLabel->setText(QString("Target: (%1, %2)").arg(pos.x()).arg(pos.y()));
+    if (m_platformAdapter) {
+        QPoint pos = m_platformAdapter->getMousePosition();
+        m_positionLabel->setText(QString("Target: (%1, %2)").arg(pos.x()).arg(pos.y()));
+    }
 }
 
 void MainWindow::onAddToSequenceClicked()
 {
-    QPoint pos = QCursor::pos();
-    QString itemText = QString("(%1, %2)").arg(pos.x()).arg(pos.y());
-    m_sequenceList->addItem(itemText);
+    if (m_platformAdapter) {
+        QPoint pos = m_platformAdapter->getMousePosition();
+        QString itemText = QString("(%1, %2)").arg(pos.x()).arg(pos.y());
+        m_sequenceList->addItem(itemText);
+    }
 }
 
 void MainWindow::onClearSequenceClicked()
@@ -301,6 +349,12 @@ void MainWindow::onStartClicked()
     m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #c8e6c9; border-radius: 5px;");
     m_clickCountLabel->setText("Clicks: 0");
     statusBar()->showMessage("Running | Press F6 to stop");
+
+    // Test click at current position
+    if (m_platformAdapter) {
+        QPoint pos = m_platformAdapter->getMousePosition();
+        m_platformAdapter->simulateClick(pos.x(), pos.y(), MouseButton::Left, ClickAction::Single);
+    }
 }
 
 void MainWindow::onStopClicked()

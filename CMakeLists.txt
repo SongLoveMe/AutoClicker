@@ -14,10 +14,13 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 set(SOURCES
     src/main.cpp
     src/MainWindow.cpp
+    src/core/WindowsPlatformAdapter.cpp
 )
 
 set(HEADERS
     src/MainWindow.h
+    src/core/PlatformAdapter.h
+    src/core/WindowsPlatformAdapter.h
 )
 
 # Create executable
@@ -30,9 +33,22 @@ target_link_libraries(AutoClicker PRIVATE
     Qt6::Gui
 )
 
+# Windows specific libraries
+if(WIN32)
+    target_link_libraries(AutoClicker PRIVATE
+        user32
+        psapi
+    )
+    target_compile_definitions(AutoClicker PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+    )
+endif()
+
 # Include directories
 target_include_directories(AutoClicker PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
 )
 
 # Output directory
