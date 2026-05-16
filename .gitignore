@@ -41,3 +41,7 @@ Thumbs.db
 
 # Config files with user data
 configs/user*.json
+
+# Claude Code project files (development only, not for release)
+CLAUDE.md
+.claude/
