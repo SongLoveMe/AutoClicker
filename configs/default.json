@@ -3,8 +3,10 @@
         "mode": 0,
         "button": 0,
         "action": 0,
-        "intervalMin": 100,
-        "intervalMax": 100,
+        "clickMethod": 0,
+        "intervalBase": 200,
+        "jitterRange": 10,
+        "useRandomJitter": false,
         "clickCount": -1,
         "antiDetect": false
     },
@@ -19,10 +21,11 @@
     },
     "window": {
         "bindWindowTitle": "",
-        "bindToWindow": false
+        "bindToWindow": false,
+        "stayOnTop": false
     },
     "general": {
-        "language": "en",
+        "language": "zh",
         "minimizeOnStart": false,
         "showInTaskbar": true
     }
