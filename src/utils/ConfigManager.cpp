@@ -103,8 +103,10 @@ QJsonObject ConfigManager::toJson() const
     clickSettings["mode"] = static_cast<int>(m_config.mode);
     clickSettings["button"] = static_cast<int>(m_config.button);
     clickSettings["action"] = static_cast<int>(m_config.action);
-    clickSettings["intervalMin"] = m_config.intervalMin;
-    clickSettings["intervalMax"] = m_config.intervalMax;
+    clickSettings["clickMethod"] = static_cast<int>(m_config.clickMethod);
+    clickSettings["intervalBase"] = m_config.intervalBase;
+    clickSettings["jitterRange"] = m_config.jitterRange;
+    clickSettings["useRandomJitter"] = m_config.useRandomJitter;
     clickSettings["clickCount"] = m_config.clickCount;
     clickSettings["antiDetect"] = m_config.antiDetect;
     json["click"] = clickSettings;
@@ -134,6 +136,7 @@ QJsonObject ConfigManager::toJson() const
     QJsonObject windowSettings;
     windowSettings["bindWindowTitle"] = m_config.bindWindowTitle;
     windowSettings["bindToWindow"] = m_config.bindToWindow;
+    windowSettings["stayOnTop"] = m_config.stayOnTop;
     json["window"] = windowSettings;
 
     // General settings
@@ -154,8 +157,10 @@ void ConfigManager::fromJson(const QJsonObject& json)
         m_config.mode = static_cast<ClickMode>(click["mode"].toInt(0));
         m_config.button = static_cast<MouseButton>(click["button"].toInt(0));
         m_config.action = static_cast<ClickAction>(click["action"].toInt(0));
-        m_config.intervalMin = click["intervalMin"].toInt(100);
-        m_config.intervalMax = click["intervalMax"].toInt(100);
+        m_config.clickMethod = static_cast<ClickMethod>(click["clickMethod"].toInt(0));
+        m_config.intervalBase = click["intervalBase"].toInt(100);
+        m_config.jitterRange = click["jitterRange"].toInt(10);
+        m_config.useRandomJitter = click["useRandomJitter"].toBool(false);
         m_config.clickCount = click["clickCount"].toInt(-1);
         m_config.antiDetect = click["antiDetect"].toBool(false);
     }
@@ -186,6 +191,7 @@ void ConfigManager::fromJson(const QJsonObject& json)
         QJsonObject window = json["window"].toObject();
         m_config.bindWindowTitle = window["bindWindowTitle"].toString();
         m_config.bindToWindow = window["bindToWindow"].toBool(false);
+        m_config.stayOnTop = window["stayOnTop"].toBool(false);
     }
 
     // General settings

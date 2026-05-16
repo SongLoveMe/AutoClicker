@@ -19,9 +19,10 @@ public:
     void setSequence(const QList<QPoint>& points);
     void setButton(MouseButton button);
     void setAction(ClickAction action);
-    void setInterval(int minMs, int maxMs);
+    void setInterval(int baseMs, int jitterMs);  // base interval + optional jitter range
     void setClickCount(int count);  // -1 for infinite
     void setAntiDetect(bool enabled);
+    void setClickMethod(ClickMethod method);
 
     void start();
     void stop();
@@ -55,8 +56,9 @@ private:
     int m_sequenceIndex = 0;
     MouseButton m_button = MouseButton::Left;
     ClickAction m_action = ClickAction::Single;
-    int m_intervalMin = 100;
-    int m_intervalMax = 100;
+    ClickMethod m_clickMethod = ClickMethod::NoInterference;  // Default to no interference
+    int m_intervalBase = 100;     // Base interval in ms
+    int m_jitterRange = 0;        // Jitter range (+/- ms), 0 means no jitter
     int m_clickCount = -1;
     bool m_antiDetect = false;
 

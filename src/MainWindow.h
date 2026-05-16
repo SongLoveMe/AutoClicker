@@ -21,10 +21,12 @@ struct ClickConfig {
     QList<QPoint> sequencePoints;
     QString buttonType = "left";
     QString clickType = "single";
-    int intervalMin = 100;
-    int intervalMax = 100;
+    int intervalBase = 100;       // Base interval in ms
+    int jitterRange = 10;         // Jitter range in ms (+/-)
+    bool useRandomJitter = false; // Enable random jitter
     int clickCount = -1;
     bool antiDetect = false;
+    ClickMethod clickMethod = ClickMethod::NoInterference;  // Default to no interference
 };
 
 class MainWindow : public QMainWindow
@@ -47,7 +49,9 @@ private slots:
     void onPickPositionClicked();
     void onAddToSequenceClicked();
     void onClearSequenceClicked();
+    void onAddManualCoordinateClicked();
     void onModeChanged();
+    void onStayOnTopToggled(bool enabled);
     void updateMousePosition();
     void onClickPerformed(int x, int y);
     void onEngineFinished();
@@ -59,6 +63,7 @@ private:
     void setupHotkeys();
     void setupClickEngine();
     void applyConfigToEngine();
+    void setWindowStayOnTop(bool enabled);
     QGroupBox* createModeGroupBox();
     QGroupBox* createConfigGroupBox();
     QGroupBox* createPositionGroupBox();
@@ -79,18 +84,25 @@ private:
 
     QComboBox* m_buttonCombo;
     QComboBox* m_clickTypeCombo;
-    QSpinBox* m_intervalMinSpin;
-    QSpinBox* m_intervalMaxSpin;
+    QComboBox* m_clickMethodCombo;     // Click method (SendMessage/SendInput)
+    QSpinBox* m_intervalSpin;           // Base interval
+    QCheckBox* m_randomJitterCheck;     // Enable random jitter
+    QSpinBox* m_jitterRangeSpin;        // Jitter range (+/- ms)
     QSpinBox* m_countSpin;
     QCheckBox* m_antiDetectCheck;
+    QCheckBox* m_stayOnTopCheck;        // Window stay on top
 
     QLabel* m_positionLabel;
     QPushButton* m_pickPosBtn;
+    QSpinBox* m_manualXSpin;        // Manual X coordinate input
+    QSpinBox* m_manualYSpin;        // Manual Y coordinate input
+    QPushButton* m_addManualBtn;    // Add manual coordinate button
     QPushButton* m_addSeqBtn;
     QPushButton* m_clearSeqBtn;
     QListWidget* m_sequenceList;
     int m_targetX;
     int m_targetY;
+    bool m_stayOnTop = false;
 
     std::shared_ptr<PlatformAdapter> m_platformAdapter;
     std::shared_ptr<ClickEngine> m_clickEngine;

@@ -30,17 +30,24 @@ MainWindow::MainWindow(QWidget* parent)
     , m_randomRadio(nullptr)
     , m_buttonCombo(nullptr)
     , m_clickTypeCombo(nullptr)
-    , m_intervalMinSpin(nullptr)
-    , m_intervalMaxSpin(nullptr)
+    , m_clickMethodCombo(nullptr)
+    , m_intervalSpin(nullptr)
+    , m_randomJitterCheck(nullptr)
+    , m_jitterRangeSpin(nullptr)
     , m_countSpin(nullptr)
     , m_antiDetectCheck(nullptr)
+    , m_stayOnTopCheck(nullptr)
     , m_positionLabel(nullptr)
     , m_pickPosBtn(nullptr)
+    , m_manualXSpin(nullptr)
+    , m_manualYSpin(nullptr)
+    , m_addManualBtn(nullptr)
     , m_addSeqBtn(nullptr)
     , m_clearSeqBtn(nullptr)
     , m_sequenceList(nullptr)
     , m_targetX(0)
     , m_targetY(0)
+    , m_stayOnTop(false)
     , m_platformAdapter(std::make_shared<WindowsPlatformAdapter>())
     , m_clickEngine(std::make_shared<ClickEngine>(m_platformAdapter))
 {
@@ -249,23 +256,39 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_clickTypeCombo->addItem("长按", "hold");
     m_clickTypeCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
+    // 点击方法（无干扰/模拟鼠标）
+    QLabel* clickMethodLabel = new QLabel("点击方法:", this);
+    clickMethodLabel->setStyleSheet("color: #333;");
+    m_clickMethodCombo = new QComboBox(this);
+    m_clickMethodCombo->addItem("无干扰 (推荐)", static_cast<int>(ClickMethod::NoInterference));
+    m_clickMethodCombo->addItem("模拟鼠标", static_cast<int>(ClickMethod::SimulateMouse));
+    m_clickMethodCombo->setStyleSheet("QComboBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+
     // 点击间隔
     QLabel* intervalLabel = new QLabel("间隔 (ms):", this);
     intervalLabel->setStyleSheet("color: #333;");
+
+    m_intervalSpin = new QSpinBox(this);
+    m_intervalSpin->setRange(1, 10000);
+    m_intervalSpin->setValue(100);
+    m_intervalSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+
+    m_randomJitterCheck = new QCheckBox("随机扰动", this);
+    m_randomJitterCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
+
+    m_jitterRangeSpin = new QSpinBox(this);
+    m_jitterRangeSpin->setRange(1, 500);
+    m_jitterRangeSpin->setValue(10);
+    m_jitterRangeSpin->setSuffix(" ms");
+    m_jitterRangeSpin->setEnabled(false);
+    m_jitterRangeSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+
+    connect(m_randomJitterCheck, &QCheckBox::toggled, m_jitterRangeSpin, &QSpinBox::setEnabled);
+
     QHBoxLayout* intervalLayout = new QHBoxLayout();
-    m_intervalMinSpin = new QSpinBox(this);
-    m_intervalMinSpin->setRange(1, 10000);
-    m_intervalMinSpin->setValue(100);
-    m_intervalMinSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
-    m_intervalMaxSpin = new QSpinBox(this);
-    m_intervalMaxSpin->setRange(1, 10000);
-    m_intervalMaxSpin->setValue(100);
-    m_intervalMaxSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
-    QLabel* dashLabel = new QLabel("-", this);
-    dashLabel->setAlignment(Qt::AlignCenter);
-    intervalLayout->addWidget(m_intervalMinSpin);
-    intervalLayout->addWidget(dashLabel);
-    intervalLayout->addWidget(m_intervalMaxSpin);
+    intervalLayout->addWidget(m_intervalSpin);
+    intervalLayout->addWidget(m_randomJitterCheck);
+    intervalLayout->addWidget(m_jitterRangeSpin);
 
     // 点击次数
     QLabel* countLabel = new QLabel("点击次数:", this);
@@ -280,15 +303,23 @@ QGroupBox* MainWindow::createConfigGroupBox()
     m_antiDetectCheck = new QCheckBox("🛡 防检测随机化", this);
     m_antiDetectCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
 
+    // 窗口置顶
+    m_stayOnTopCheck = new QCheckBox("🔝 窗口置顶", this);
+    m_stayOnTopCheck->setStyleSheet("QCheckBox { color: #333; padding: 5px; }");
+    connect(m_stayOnTopCheck, &QCheckBox::toggled, this, &MainWindow::onStayOnTopToggled);
+
     layout->addWidget(buttonLabel, 0, 0);
     layout->addWidget(m_buttonCombo, 0, 1);
     layout->addWidget(clickTypeLabel, 1, 0);
     layout->addWidget(m_clickTypeCombo, 1, 1);
-    layout->addWidget(intervalLabel, 2, 0);
-    layout->addLayout(intervalLayout, 2, 1);
-    layout->addWidget(countLabel, 3, 0);
-    layout->addWidget(m_countSpin, 3, 1);
-    layout->addWidget(m_antiDetectCheck, 4, 0, 1, 2);
+    layout->addWidget(clickMethodLabel, 2, 0);
+    layout->addWidget(m_clickMethodCombo, 2, 1);
+    layout->addWidget(intervalLabel, 3, 0);
+    layout->addLayout(intervalLayout, 3, 1);
+    layout->addWidget(countLabel, 4, 0);
+    layout->addWidget(m_countSpin, 4, 1);
+    layout->addWidget(m_antiDetectCheck, 5, 0, 1, 2);
+    layout->addWidget(m_stayOnTopCheck, 6, 0, 1, 2);
 
     return group;
 }
@@ -325,6 +356,29 @@ QGroupBox* MainWindow::createPositionGroupBox()
     seqBtnLayout->addWidget(m_clearSeqBtn);
     layout->addLayout(seqBtnLayout);
 
+    // 手动坐标输入
+    QHBoxLayout* manualCoordLayout = new QHBoxLayout();
+    QLabel* manualCoordLabel = new QLabel("手动输入:", this);
+    manualCoordLabel->setStyleSheet("color: #666; font-size: 12px;");
+    m_manualXSpin = new QSpinBox(this);
+    m_manualXSpin->setRange(0, 9999);
+    m_manualXSpin->setValue(0);
+    m_manualXSpin->setPrefix("X: ");
+    m_manualXSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+    m_manualYSpin = new QSpinBox(this);
+    m_manualYSpin->setRange(0, 9999);
+    m_manualYSpin->setValue(0);
+    m_manualYSpin->setPrefix("Y: ");
+    m_manualYSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
+    m_addManualBtn = new QPushButton("添加", this);
+    m_addManualBtn->setStyleSheet("QPushButton { padding: 6px 12px; background: #FF9800; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #F57C00; }");
+    connect(m_addManualBtn, &QPushButton::clicked, this, &MainWindow::onAddManualCoordinateClicked);
+    manualCoordLayout->addWidget(manualCoordLabel);
+    manualCoordLayout->addWidget(m_manualXSpin);
+    manualCoordLayout->addWidget(m_manualYSpin);
+    manualCoordLayout->addWidget(m_addManualBtn);
+    layout->addLayout(manualCoordLayout);
+
     // 序列列表
     m_sequenceList = new QListWidget(this);
     m_sequenceList->setMaximumHeight(120);
@@ -343,8 +397,10 @@ ClickConfig MainWindow::getConfig() const
     config.targetY = m_targetY;
     config.buttonType = m_buttonCombo->currentData().toString();
     config.clickType = m_clickTypeCombo->currentData().toString();
-    config.intervalMin = m_intervalMinSpin->value();
-    config.intervalMax = m_intervalMaxSpin->value();
+    config.clickMethod = static_cast<ClickMethod>(m_clickMethodCombo->currentData().toInt());
+    config.intervalBase = m_intervalSpin->value();
+    config.useRandomJitter = m_randomJitterCheck->isChecked();
+    config.jitterRange = m_jitterRangeSpin->value();
     config.clickCount = m_countSpin->value();
     config.antiDetect = m_antiDetectCheck->isChecked();
 
@@ -395,9 +451,10 @@ void MainWindow::applyConfigToEngine()
     m_clickEngine->setSequence(config.sequencePoints);
     m_clickEngine->setButton(getButtonFromConfig());
     m_clickEngine->setAction(getActionFromConfig());
-    m_clickEngine->setInterval(config.intervalMin, config.intervalMax);
+    m_clickEngine->setInterval(config.intervalBase, config.useRandomJitter ? config.jitterRange : 0);
     m_clickEngine->setClickCount(config.clickCount);
     m_clickEngine->setAntiDetect(config.antiDetect);
+    m_clickEngine->setClickMethod(config.clickMethod);
 }
 
 void MainWindow::onModeChanged()
@@ -490,4 +547,30 @@ void MainWindow::onEngineFinished()
     m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #bbdefb; border-radius: 8px; color: #1565c0;");
     m_clickCountLabel->setText(QString("点击次数: %1").arg(m_clickEngine->getTotalClicks()));
     statusBar()->showMessage("已完成 | 总点击: " + QString::number(m_clickEngine->getTotalClicks()));
+}
+
+void MainWindow::onStayOnTopToggled(bool enabled)
+{
+    m_stayOnTop = enabled;
+    setWindowStayOnTop(enabled);
+}
+
+void MainWindow::setWindowStayOnTop(bool enabled)
+{
+    Qt::WindowFlags flags = windowFlags();
+    if (enabled) {
+        flags |= Qt::WindowStaysOnTopHint;
+    } else {
+        flags &= ~Qt::WindowStaysOnTopHint;
+    }
+    setWindowFlags(flags);
+    show();  // Required after changing window flags
+}
+
+void MainWindow::onAddManualCoordinateClicked()
+{
+    int x = m_manualXSpin->value();
+    int y = m_manualYSpin->value();
+    QString itemText = QString("(%1, %2)").arg(x).arg(y);
+    m_sequenceList->addItem(itemText);
 }

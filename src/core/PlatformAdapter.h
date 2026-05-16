@@ -27,6 +27,12 @@ enum class ClickMode {
     Drag
 };
 
+enum class ClickMethod {
+    NoInterference,  // No interference - direct message to window (PostMessage)
+    SimulateMouse,   // Simulate physical mouse (SendInput)
+    Auto             // Auto select based on situation
+};
+
 struct WindowInfo {
     uintptr_t id;
     std::string title;
@@ -41,6 +47,7 @@ public:
 
     // Mouse operations
     virtual void simulateClick(int x, int y, MouseButton button, ClickAction action, int holdDuration = 100) = 0;
+    virtual void simulateClickNoInterference(int x, int y, MouseButton button, ClickAction action, ClickMethod method = ClickMethod::NoInterference) = 0;
     virtual void simulateMouseMove(int x, int y) = 0;
     virtual QPoint getMousePosition() = 0;
 

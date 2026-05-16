@@ -14,6 +14,7 @@ public:
     ~WindowsPlatformAdapter() override;
 
     void simulateClick(int x, int y, MouseButton button, ClickAction action, int holdDuration = 100) override;
+    void simulateClickNoInterference(int x, int y, MouseButton button, ClickAction action, ClickMethod method = ClickMethod::NoInterference) override;
     void simulateMouseMove(int x, int y) override;
     QPoint getMousePosition() override;
 

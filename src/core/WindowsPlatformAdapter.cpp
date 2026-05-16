@@ -80,6 +80,92 @@ void WindowsPlatformAdapter::simulateClick(int x, int y, MouseButton button, Cli
     }
 }
 
+void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButton button, ClickAction action, ClickMethod method)
+{
+    if (method == ClickMethod::SimulateMouse) {
+        // Use traditional SendInput method
+        simulateClick(x, y, button, action);
+        return;
+    }
+
+    // SendMessage method - no interference with mouse
+    POINT pt = {x, y};
+    HWND targetWindow = WindowFromPoint(pt);
+
+    if (!targetWindow) {
+        // Fallback to SendInput if no window found
+        simulateClick(x, y, button, action);
+        return;
+    }
+
+    // Get window relative coordinates
+    RECT rect;
+    GetWindowRect(targetWindow, &rect);
+    int relX = x - rect.left;
+    int relY = y - rect.top;
+
+    // Determine button flags
+    WPARAM wParam = 0;
+    switch (button) {
+        case MouseButton::Left:
+            wParam = MK_LBUTTON;
+            break;
+        case MouseButton::Right:
+            wParam = MK_RBUTTON;
+            break;
+        case MouseButton::Middle:
+            wParam = MK_MBUTTON;
+            break;
+    }
+
+    LPARAM lParam = MAKELPARAM(relX, relY);
+
+    int clickCount = 1;
+    switch (action) {
+        case ClickAction::Single:
+            clickCount = 1;
+            break;
+        case ClickAction::Double:
+            clickCount = 2;
+            break;
+        case ClickAction::Triple:
+            clickCount = 3;
+            break;
+        case ClickAction::Hold:
+            // For hold, use traditional method
+            simulateClick(x, y, button, action);
+            return;
+    }
+
+    // Determine message types
+    UINT downMsg, upMsg;
+    switch (button) {
+        case MouseButton::Left:
+            downMsg = WM_LBUTTONDOWN;
+            upMsg = WM_LBUTTONUP;
+            break;
+        case MouseButton::Right:
+            downMsg = WM_RBUTTONDOWN;
+            upMsg = WM_RBUTTONUP;
+            break;
+        case MouseButton::Middle:
+            downMsg = WM_MBUTTONDOWN;
+            upMsg = WM_MBUTTONUP;
+            break;
+    }
+
+    // Send click messages
+    for (int i = 0; i < clickCount; ++i) {
+        PostMessage(targetWindow, downMsg, wParam, lParam);
+        Sleep(10);
+        PostMessage(targetWindow, upMsg, 0, lParam);
+
+        if (i < clickCount - 1) {
+            Sleep(50);
+        }
+    }
+}
+
 void WindowsPlatformAdapter::simulateMouseMove(int x, int y)
 {
     INPUT input = {};

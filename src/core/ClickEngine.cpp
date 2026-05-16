@@ -42,10 +42,10 @@ void ClickEngine::setAction(ClickAction action)
     m_action = action;
 }
 
-void ClickEngine::setInterval(int minMs, int maxMs)
+void ClickEngine::setInterval(int baseMs, int jitterMs)
 {
-    m_intervalMin = minMs;
-    m_intervalMax = maxMs;
+    m_intervalBase = baseMs;
+    m_jitterRange = jitterMs;
 }
 
 void ClickEngine::setClickCount(int count)
@@ -56,6 +56,11 @@ void ClickEngine::setClickCount(int count)
 void ClickEngine::setAntiDetect(bool enabled)
 {
     m_antiDetect = enabled;
+}
+
+void ClickEngine::setClickMethod(ClickMethod method)
+{
+    m_clickMethod = method;
 }
 
 void ClickEngine::start()
@@ -193,7 +198,13 @@ void ClickEngine::performClick()
 
     // Perform the click
     if (m_platform) {
-        m_platform->simulateClick(clickX, clickY, m_button, m_action);
+        if (m_clickMethod == ClickMethod::NoInterference) {
+            // Use no-interference click method
+            m_platform->simulateClickNoInterference(clickX, clickY, m_button, m_action, ClickMethod::NoInterference);
+        } else {
+            // Use traditional SendInput method
+            m_platform->simulateClick(clickX, clickY, m_button, m_action);
+        }
         m_totalClicks++;
         m_currentCount++;
         emit clickPerformed(clickX, clickY);
@@ -206,10 +217,12 @@ void ClickEngine::performClick()
 
 int ClickEngine::getRandomInterval()
 {
-    if (m_intervalMin == m_intervalMax) {
-        return m_intervalMin;
+    if (m_jitterRange == 0) {
+        return m_intervalBase;
     }
-    return QRandomGenerator::global()->bounded(m_intervalMin, m_intervalMax + 1);
+    // Generate random jitter within +/- jitterRange
+    int jitter = QRandomGenerator::global()->bounded(-m_jitterRange, m_jitterRange + 1);
+    return qMax(1, m_intervalBase + jitter);  // Ensure at least 1ms
 }
 
 QPoint ClickEngine::getRandomOffset()
