@@ -26,7 +26,7 @@ void ClickEngine::setPosition(int x, int y)
     m_targetY = y;
 }
 
-void ClickEngine::setSequence(const QList<QPoint>& points)
+void ClickEngine::setSequence(const QList<SequencePoint>& points)
 {
     m_sequencePoints = points;
     m_sequenceIndex = 0;
@@ -102,6 +102,7 @@ void ClickEngine::stop()
     m_timer->stop();
     m_running = false;
     m_paused = false;
+    m_currentTargetWindowId = 0;
 
     qDebug() << "ClickEngine stopped, total clicks:" << m_totalClicks;
     emit finished();
@@ -141,32 +142,36 @@ int ClickEngine::getTotalClicks() const
     return m_totalClicks;
 }
 
+uintptr_t ClickEngine::getCurrentTargetWindowId() const
+{
+    return m_currentTargetWindowId;
+}
+
 void ClickEngine::performClick()
 {
     // Stop timer to calculate next interval
     m_timer->stop();
 
     // Check if we've reached the click count limit
-    if (m_clickCount > 0 && m_currentCount >= m_clickCount) {
+    // -1 means infinite, 0 means no clicks (disabled), >0 means specific count
+    if (m_clickCount >= 0 && m_currentCount >= m_clickCount) {
         stop();
         return;
     }
 
-    // Handle window binding - activate target window if specified
-    if (m_platform && m_targetWindowId != 0) {
-        m_platform->setForegroundWindow(m_targetWindowId);
-    }
-
-    // Determine click position based on mode and window binding
+    // Determine click position based on mode
     int clickX = m_targetX;
     int clickY = m_targetY;
+    uintptr_t clickWindowId = m_targetWindowId;
+    MouseButton clickButton = m_button;
 
     // If we have a target element, use its position
     if (m_hasTargetElement) {
-        if (m_targetWindowId != 0) {
-            QPoint windowPos = m_platform->getWindowPosition(m_targetWindowId);
+        if (m_targetElement.windowId != 0) {
+            QPoint windowPos = m_platform->getWindowPosition(m_targetElement.windowId);
             clickX = windowPos.x() + m_targetElement.relativeX + m_targetElement.width / 2;
             clickY = windowPos.y() + m_targetElement.relativeY + m_targetElement.height / 2;
+            clickWindowId = m_targetElement.windowId;
         }
         if (m_antiDetect) {
             QPoint offset = getRandomOffset();
@@ -182,6 +187,7 @@ void ClickEngine::performClick()
                     QPoint windowPos = m_platform->getWindowPosition(m_targetWindowId);
                     clickX = windowPos.x() + m_targetX;
                     clickY = windowPos.y() + m_targetY;
+                    clickWindowId = m_targetWindowId;
                 }
                 if (m_antiDetect) {
                     QPoint offset = getRandomOffset();
@@ -195,6 +201,7 @@ void ClickEngine::performClick()
                     QPoint pos = m_platform->getMousePosition();
                     clickX = pos.x();
                     clickY = pos.y();
+                    clickWindowId = m_platform->getWindowAtPoint(clickX, clickY);
                     if (m_antiDetect) {
                         QPoint offset = getRandomOffset();
                         clickX += offset.x();
@@ -210,16 +217,32 @@ void ClickEngine::performClick()
                     return;
                 }
                 {
-                    QPoint pt = getNextSequencePoint();
-                    // Apply window binding to sequence points
-                    if (m_targetWindowId != 0) {
-                        QPoint windowPos = m_platform->getWindowPosition(m_targetWindowId);
-                        clickX = windowPos.x() + pt.x();
-                        clickY = windowPos.y() + pt.y();
+                    SequencePoint pt = getNextSequencePoint();
+                    clickButton = toMouseButton(pt.button);  // Use per-point button (convert type)
+
+                    // Use per-point window binding
+                    if (pt.windowId != 0) {
+                        // Get current window position for movement compensation
+                        WindowInfo winInfo = m_platform->getWindowInfo(pt.windowId);
+
+                        // Verify window still exists (check if title matches)
+                        if (winInfo.id == pt.windowId || winInfo.title == pt.windowTitle) {
+                            clickX = winInfo.x + pt.relX;
+                            clickY = winInfo.y + pt.relY;
+                            clickWindowId = pt.windowId;
+                        } else {
+                            // Window might have changed, fallback to absolute coordinates
+                            clickX = pt.screenX;
+                            clickY = pt.screenY;
+                            clickWindowId = 0;
+                            qDebug() << "Window binding lost, using absolute coords";
+                        }
                     } else {
-                        clickX = pt.x();
-                        clickY = pt.y();
+                        // No window binding, use absolute screen coordinates
+                        clickX = pt.screenX;
+                        clickY = pt.screenY;
                     }
+
                     if (m_antiDetect) {
                         QPoint offset = getRandomOffset();
                         clickX += offset.x();
@@ -240,21 +263,30 @@ void ClickEngine::performClick()
         }
     }
 
+    // Update current target window for UI display
+    m_currentTargetWindowId = clickWindowId;
+
     // Perform the click
     if (m_platform) {
         // If we have a target element and using no-interference, click directly on element
         if (m_hasTargetElement && m_clickMethod == ClickMethod::NoInterference) {
-            m_platform->clickElement(m_targetElement.windowId, m_button, m_action);
+            m_platform->clickElement(m_targetElement.windowId, clickButton, m_action);
+        } else if (m_clickMethod == ClickMethod::NoInterference && clickWindowId != 0) {
+            // Use window-bound no-interference - send directly to target window
+            QPoint windowPos = m_platform->getWindowPosition(clickWindowId);
+            int relX = clickX - windowPos.x();
+            int relY = clickY - windowPos.y();
+            m_platform->simulateClickToWindow(clickWindowId, relX, relY, clickButton, m_action);
         } else if (m_clickMethod == ClickMethod::NoInterference) {
-            // Use no-interference click method
-            m_platform->simulateClickNoInterference(clickX, clickY, m_button, m_action, ClickMethod::NoInterference);
+            // Use no-interference click method (no window binding)
+            m_platform->simulateClickNoInterference(clickX, clickY, clickButton, m_action, ClickMethod::NoInterference);
         } else {
             // Use traditional SendInput method
-            m_platform->simulateClick(clickX, clickY, m_button, m_action);
+            m_platform->simulateClick(clickX, clickY, clickButton, m_action);
         }
         m_totalClicks++;
         m_currentCount++;
-        emit clickPerformed(clickX, clickY);
+        emit clickPerformed(clickX, clickY, clickWindowId);
     }
 
     // Calculate next interval and restart timer
@@ -280,13 +312,13 @@ QPoint ClickEngine::getRandomOffset()
     return QPoint(offsetX, offsetY);
 }
 
-QPoint ClickEngine::getNextSequencePoint()
+SequencePoint ClickEngine::getNextSequencePoint()
 {
     if (m_sequencePoints.isEmpty()) {
-        return QPoint(0, 0);
+        return SequencePoint();
     }
 
-    QPoint pt = m_sequencePoints[m_sequenceIndex];
+    SequencePoint pt = m_sequencePoints[m_sequenceIndex];
     m_sequenceIndex = (m_sequenceIndex + 1) % m_sequencePoints.size();
     return pt;
 }

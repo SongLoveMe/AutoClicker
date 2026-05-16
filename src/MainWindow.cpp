@@ -12,6 +12,8 @@
 #include <QMouseEvent>
 #include <QDebug>
 #include <QRegularExpression>
+#include <QDialog>
+#include <QMenu>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -24,10 +26,6 @@ MainWindow::MainWindow(QWidget* parent)
     , m_pauseBtn(nullptr)
     , m_statusLabel(nullptr)
     , m_clickCountLabel(nullptr)
-    , m_fixedPosRadio(nullptr)
-    , m_followCursorRadio(nullptr)
-    , m_sequenceRadio(nullptr)
-    , m_randomRadio(nullptr)
     , m_buttonCombo(nullptr)
     , m_clickTypeCombo(nullptr)
     , m_clickMethodCombo(nullptr)
@@ -38,14 +36,15 @@ MainWindow::MainWindow(QWidget* parent)
     , m_antiDetectCheck(nullptr)
     , m_stayOnTopCheck(nullptr)
     , m_positionLabel(nullptr)
-    , m_pickPosBtn(nullptr)
     , m_manualXSpin(nullptr)
     , m_manualYSpin(nullptr)
     , m_addManualBtn(nullptr)
     , m_recordBtn(nullptr)
     , m_recordStatusLabel(nullptr)
     , m_isRecording(false)
-    , m_addSeqBtn(nullptr)
+    , m_deleteSeqBtn(nullptr)
+    , m_moveUpBtn(nullptr)
+    , m_moveDownBtn(nullptr)
     , m_clearSeqBtn(nullptr)
     , m_sequenceList(nullptr)
     , m_targetX(0)
@@ -120,7 +119,7 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 void MainWindow::setupUI()
 {
     // 设置窗口标题
-    setWindowTitle("通用连点器 v1.0");
+    setWindowTitle("通用连点器 v2.1");
 
     setupToolbar();
     setupStatusBar();
@@ -140,27 +139,22 @@ void MainWindow::setupUI()
     // 内容区域
     QHBoxLayout* contentLayout = new QHBoxLayout();
 
-    // 左侧：模式选择
+    // 左侧：配置
     QVBoxLayout* leftLayout = new QVBoxLayout();
-    leftLayout->addWidget(createModeGroupBox());
-    leftLayout->addStretch();
-
-    // 中间：配置
-    QVBoxLayout* middleLayout = new QVBoxLayout();
-    middleLayout->addWidget(createConfigGroupBox());
+    leftLayout->addWidget(createConfigGroupBox());
 
     // 状态显示
     m_statusLabel = new QLabel("就绪", this);
     m_statusLabel->setAlignment(Qt::AlignCenter);
     m_statusLabel->setStyleSheet("font-size: 16px; padding: 15px; background-color: #e0e0e0; border-radius: 8px; color: #555;");
-    middleLayout->addWidget(m_statusLabel);
+    leftLayout->addWidget(m_statusLabel);
 
     m_clickCountLabel = new QLabel("点击次数: 0", this);
     m_clickCountLabel->setAlignment(Qt::AlignCenter);
     m_clickCountLabel->setStyleSheet("font-size: 14px; color: #666;");
-    middleLayout->addWidget(m_clickCountLabel);
+    leftLayout->addWidget(m_clickCountLabel);
 
-    middleLayout->addStretch();
+    leftLayout->addStretch();
 
     // 右侧：坐标和目标窗口
     QVBoxLayout* rightLayout = new QVBoxLayout();
@@ -169,11 +163,14 @@ void MainWindow::setupUI()
     rightLayout->addStretch();
 
     contentLayout->addLayout(leftLayout);
-    contentLayout->addLayout(middleLayout);
     contentLayout->addLayout(rightLayout);
 
     mainLayout->addLayout(contentLayout);
     setCentralWidget(centralWidget);
+
+    // Set default: window stay on top enabled
+    m_stayOnTopCheck->setChecked(true);
+    setWindowStayOnTop(true);
 }
 
 void MainWindow::setupToolbar()
@@ -209,39 +206,6 @@ void MainWindow::setupStatusBar()
 {
     statusBar()->setStyleSheet("QStatusBar { background: #fff; color: #666; }");
     statusBar()->showMessage("就绪 | 热键: F6 开始/停止 | F7 暂停");
-}
-
-QGroupBox* MainWindow::createModeGroupBox()
-{
-    QGroupBox* group = new QGroupBox("点击模式", this);
-    group->setStyleSheet("QGroupBox { font-weight: bold; border: 1px solid #ddd; border-radius: 8px; margin-top: 10px; padding-top: 10px; background: #fff; } QGroupBox::title { subcontrol-origin: margin; left: 10px; color: #333; }");
-    QVBoxLayout* layout = new QVBoxLayout(group);
-    layout->setSpacing(8);
-
-    m_fixedPosRadio = new QRadioButton("📍 固定位置", this);
-    m_fixedPosRadio->setChecked(true);
-    m_fixedPosRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
-
-    m_followCursorRadio = new QRadioButton("🖱 跟随鼠标", this);
-    m_followCursorRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
-
-    m_sequenceRadio = new QRadioButton("📋 序列点击", this);
-    m_sequenceRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
-
-    m_randomRadio = new QRadioButton("🎲 随机区域", this);
-    m_randomRadio->setStyleSheet("QRadioButton { color: #333; padding: 5px; }");
-
-    connect(m_fixedPosRadio, &QRadioButton::toggled, this, &MainWindow::onModeChanged);
-    connect(m_followCursorRadio, &QRadioButton::toggled, this, &MainWindow::onModeChanged);
-    connect(m_sequenceRadio, &QRadioButton::toggled, this, &MainWindow::onModeChanged);
-    connect(m_randomRadio, &QRadioButton::toggled, this, &MainWindow::onModeChanged);
-
-    layout->addWidget(m_fixedPosRadio);
-    layout->addWidget(m_followCursorRadio);
-    layout->addWidget(m_sequenceRadio);
-    layout->addWidget(m_randomRadio);
-
-    return group;
 }
 
 QGroupBox* MainWindow::createConfigGroupBox()
@@ -309,7 +273,7 @@ QGroupBox* MainWindow::createConfigGroupBox()
     countLabel->setStyleSheet("color: #333;");
     m_countSpin = new QSpinBox(this);
     m_countSpin->setRange(-1, 1000000);
-    m_countSpin->setValue(-1);
+    m_countSpin->setValue(0);  // Default to 0 (disabled), prevents accidental activation
     m_countSpin->setSpecialValueText("无限");
     m_countSpin->setStyleSheet("QSpinBox { padding: 5px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }");
 
@@ -350,26 +314,6 @@ QGroupBox* MainWindow::createPositionGroupBox()
     m_positionLabel->setStyleSheet("font-size: 13px; color: #666; padding: 5px; background: #f9f9f9; border-radius: 4px;");
     layout->addWidget(m_positionLabel);
 
-    // 选取坐标按钮
-    m_pickPosBtn = new QPushButton("📍 选取坐标", this);
-    m_pickPosBtn->setStyleSheet("QPushButton { padding: 10px; background: #2196F3; color: white; border-radius: 6px; border: none; } QPushButton:hover { background: #1976D2; }");
-    connect(m_pickPosBtn, &QPushButton::clicked, this, &MainWindow::onPickPositionClicked);
-    layout->addWidget(m_pickPosBtn);
-
-    // 序列操作
-    QHBoxLayout* seqBtnLayout = new QHBoxLayout();
-    m_addSeqBtn = new QPushButton("➕ 添加序列", this);
-    m_addSeqBtn->setStyleSheet("QPushButton { padding: 8px; background: #4CAF50; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #45a049; }");
-    m_addSeqBtn->setEnabled(false);
-    m_clearSeqBtn = new QPushButton("🗑 清除序列", this);
-    m_clearSeqBtn->setStyleSheet("QPushButton { padding: 8px; background: #9E9E9E; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #757575; }");
-    m_clearSeqBtn->setEnabled(false);
-    connect(m_addSeqBtn, &QPushButton::clicked, this, &MainWindow::onAddToSequenceClicked);
-    connect(m_clearSeqBtn, &QPushButton::clicked, this, &MainWindow::onClearSequenceClicked);
-    seqBtnLayout->addWidget(m_addSeqBtn);
-    seqBtnLayout->addWidget(m_clearSeqBtn);
-    layout->addLayout(seqBtnLayout);
-
     // 手动坐标输入
     QHBoxLayout* manualCoordLayout = new QHBoxLayout();
     QLabel* manualCoordLabel = new QLabel("手动输入:", this);
@@ -407,10 +351,38 @@ QGroupBox* MainWindow::createPositionGroupBox()
 
     // 序列列表
     m_sequenceList = new QListWidget(this);
-    m_sequenceList->setMaximumHeight(120);
-    m_sequenceList->setEnabled(false);
+    m_sequenceList->setMaximumHeight(150);
     m_sequenceList->setStyleSheet("QListWidget { border: 1px solid #ddd; border-radius: 4px; background: #fafafa; } QListWidget::item { padding: 5px; }");
+    m_sequenceList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_sequenceList, &QListWidget::customContextMenuRequested, this, &MainWindow::onSequenceContextMenuRequested);
+    connect(m_sequenceList, &QListWidget::itemDoubleClicked, this, &MainWindow::onSequenceItemDoubleClicked);
     layout->addWidget(m_sequenceList);
+
+    // 序列编辑按钮
+    QHBoxLayout* seqEditLayout = new QHBoxLayout();
+    m_deleteSeqBtn = new QPushButton("删除选中", this);
+    m_deleteSeqBtn->setStyleSheet("QPushButton { padding: 6px; background: #f44336; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #d32f2f; }");
+    connect(m_deleteSeqBtn, &QPushButton::clicked, this, &MainWindow::onDeleteSequenceItemClicked);
+
+    m_moveUpBtn = new QPushButton("↑", this);
+    m_moveUpBtn->setMaximumWidth(40);
+    m_moveUpBtn->setStyleSheet("QPushButton { padding: 6px; background: #2196F3; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #1976D2; }");
+    connect(m_moveUpBtn, &QPushButton::clicked, this, &MainWindow::onMoveSequenceItemUp);
+
+    m_moveDownBtn = new QPushButton("↓", this);
+    m_moveDownBtn->setMaximumWidth(40);
+    m_moveDownBtn->setStyleSheet("QPushButton { padding: 6px; background: #2196F3; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #1976D2; }");
+    connect(m_moveDownBtn, &QPushButton::clicked, this, &MainWindow::onMoveSequenceItemDown);
+
+    m_clearSeqBtn = new QPushButton("清空全部", this);
+    m_clearSeqBtn->setStyleSheet("QPushButton { padding: 6px; background: #9E9E9E; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #757575; }");
+    connect(m_clearSeqBtn, &QPushButton::clicked, this, &MainWindow::onClearSequenceClicked);
+
+    seqEditLayout->addWidget(m_deleteSeqBtn);
+    seqEditLayout->addWidget(m_moveUpBtn);
+    seqEditLayout->addWidget(m_moveDownBtn);
+    seqEditLayout->addWidget(m_clearSeqBtn);
+    layout->addLayout(seqEditLayout);
 
     return group;
 }
@@ -469,7 +441,6 @@ QGroupBox* MainWindow::createTargetWindowGroupBox()
 ClickConfig MainWindow::getConfig() const
 {
     ClickConfig config;
-    config.mode = getModeFromConfig();
     config.targetX = m_targetX;
     config.targetY = m_targetY;
     config.buttonType = m_buttonCombo->currentData().toString();
@@ -481,26 +452,17 @@ ClickConfig MainWindow::getConfig() const
     config.clickCount = m_countSpin->value();
     config.antiDetect = m_antiDetectCheck->isChecked();
 
-    // Get sequence points
-    for (int i = 0; i < m_sequenceList->count(); ++i) {
-        QString text = m_sequenceList->item(i)->text();
-        QRegularExpression re("\\((\\d+), (\\d+)\\)");
-        QRegularExpressionMatch match = re.match(text);
-        if (match.hasMatch()) {
-            config.sequencePoints.append(QPoint(match.captured(1).toInt(), match.captured(2).toInt()));
-        }
+    // Use stored sequence points
+    config.sequencePoints = m_sequencePoints;
+
+    // Auto-detect mode: if sequence has points, use Sequence mode; otherwise FixedPosition
+    if (config.sequencePoints.size() > 0) {
+        config.mode = ClickMode::Sequence;
+    } else {
+        config.mode = ClickMode::FixedPosition;
     }
 
     return config;
-}
-
-ClickMode MainWindow::getModeFromConfig() const
-{
-    if (m_fixedPosRadio->isChecked()) return ClickMode::FixedPosition;
-    if (m_followCursorRadio->isChecked()) return ClickMode::FollowCursor;
-    if (m_sequenceRadio->isChecked()) return ClickMode::Sequence;
-    if (m_randomRadio->isChecked()) return ClickMode::RandomArea;
-    return ClickMode::Drag;
 }
 
 MouseButton MainWindow::getButtonFromConfig() const
@@ -540,14 +502,6 @@ void MainWindow::applyConfigToEngine()
     }
 }
 
-void MainWindow::onModeChanged()
-{
-    bool isSequence = m_sequenceRadio->isChecked();
-    m_addSeqBtn->setEnabled(isSequence);
-    m_clearSeqBtn->setEnabled(isSequence);
-    m_sequenceList->setEnabled(isSequence);
-}
-
 void MainWindow::updateMousePosition()
 {
     if (m_platformAdapter) {
@@ -556,28 +510,11 @@ void MainWindow::updateMousePosition()
     }
 }
 
-void MainWindow::onPickPositionClicked()
-{
-    if (m_platformAdapter) {
-        QPoint pos = m_platformAdapter->getMousePosition();
-        m_targetX = pos.x();
-        m_targetY = pos.y();
-        m_positionLabel->setText(QString("目标坐标: (%1, %2)").arg(pos.x()).arg(pos.y()));
-    }
-}
-
-void MainWindow::onAddToSequenceClicked()
-{
-    if (m_platformAdapter) {
-        QPoint pos = m_platformAdapter->getMousePosition();
-        QString itemText = QString("(%1, %2)").arg(pos.x()).arg(pos.y());
-        m_sequenceList->addItem(itemText);
-    }
-}
-
 void MainWindow::onClearSequenceClicked()
 {
     m_sequenceList->clear();
+    m_sequencePoints.clear();
+    m_recordStatusLabel->setText("未录制");
 }
 
 void MainWindow::onStartClicked()
@@ -618,10 +555,13 @@ void MainWindow::onPauseClicked()
     }
 }
 
-void MainWindow::onClickPerformed(int x, int y)
+void MainWindow::onClickPerformed(int x, int y, uintptr_t windowId)
 {
     int total = m_clickEngine->getTotalClicks();
     m_clickCountLabel->setText(QString("点击次数: %1").arg(total));
+
+    // Track last clicked window for idle display
+    m_lastClickedWindowId = windowId;
 }
 
 void MainWindow::onEngineFinished()
@@ -654,8 +594,16 @@ void MainWindow::onAddManualCoordinateClicked()
 {
     int x = m_manualXSpin->value();
     int y = m_manualYSpin->value();
-    QString itemText = QString("(%1, %2)").arg(x).arg(y);
-    m_sequenceList->addItem(itemText);
+
+    // Create a SequencePoint without window binding
+    SequencePoint point;
+    point.screenX = x;
+    point.screenY = y;
+    point.button = RecordedButton::Left;  // Default to left button
+    point.windowId = 0;  // No window binding
+
+    m_sequencePoints.append(point);
+    updateSequenceListDisplay();
 }
 
 void MainWindow::onRecordToggled(bool enabled)
@@ -664,6 +612,7 @@ void MainWindow::onRecordToggled(bool enabled)
 
     if (enabled) {
         // Start recording - use mouse hook
+        // Note: Mouse hook already filters clicks inside AutoClicker window
         bool success = m_platformAdapter->startMouseHook([this](const RecordedClick& click) {
             onMouseClickRecorded(click);
         });
@@ -682,7 +631,7 @@ void MainWindow::onRecordToggled(bool enabled)
         m_platformAdapter->stopMouseHook();
         m_recordBtn->setText("🔴 开始录制");
         m_recordBtn->setStyleSheet("QPushButton { padding: 8px; background: #4CAF50; color: white; border-radius: 4px; border: none; } QPushButton:hover { background: #45a049; }");
-        m_recordStatusLabel->setText(QString("已录制 %1 个点").arg(m_sequenceList->count()));
+        m_recordStatusLabel->setText(QString("已录制 %1 个点").arg(m_sequencePoints.size()));
         m_recordStatusLabel->setStyleSheet("color: #666; font-size: 12px; padding: 5px;");
     }
 }
@@ -691,17 +640,31 @@ void MainWindow::onMouseClickRecorded(const RecordedClick& click)
 {
     if (!m_isRecording) return;
 
-    // Format button type
-    QString buttonIcon;
-    switch (click.button) {
-        case RecordedButton::Left: buttonIcon = "左"; break;
-        case RecordedButton::Right: buttonIcon = "右"; break;
-        case RecordedButton::Middle: buttonIcon = "中"; break;
+    // Create SequencePoint with full information
+    SequencePoint point;
+    point.screenX = click.x;
+    point.screenY = click.y;
+    point.button = click.button;
+
+    // Capture window information
+    point.windowId = click.windowId;
+    if (point.windowId != 0) {
+        WindowInfo winInfo = m_platformAdapter->getWindowInfo(point.windowId);
+        point.windowTitle = winInfo.title;
+        point.processName = winInfo.processName;
+
+        // Calculate relative coordinates
+        point.relX = click.x - winInfo.x;
+        point.relY = click.y - winInfo.y;
     }
 
-    QString itemText = QString("[%1] (%2, %3)").arg(buttonIcon).arg(click.x).arg(click.y);
-    m_sequenceList->addItem(itemText);
-    m_recordStatusLabel->setText(QString("录制中... %1 个点").arg(m_sequenceList->count()));
+    // Store the SequencePoint
+    m_sequencePoints.append(point);
+
+    // Update display
+    updateSequenceListDisplay();
+
+    m_recordStatusLabel->setText(QString("录制中... %1 个点").arg(m_sequencePoints.size()));
 }
 
 void MainWindow::setupWindowUpdateTimer()
@@ -715,19 +678,31 @@ void MainWindow::updateCurrentWindow()
 {
     if (!m_platformAdapter) return;
 
-    uintptr_t topWindow = m_platformAdapter->getForegroundWindowId();
-    std::string title = m_platformAdapter->getWindowTitle(topWindow);
+    QString displayText;
 
-    if (title.length() > 0) {
-        // Truncate long titles
-        QString displayTitle = QString::fromStdString(title);
-        if (displayTitle.length() > 30) {
-            displayTitle = displayTitle.left(30) + "...";
+    if (m_clickEngine->isRunning()) {
+        // During running: show the window being clicked
+        uintptr_t targetWindow = m_clickEngine->getCurrentTargetWindowId();
+        if (targetWindow != 0) {
+            std::wstring title = m_platformAdapter->getWindowTitleW(targetWindow);
+            displayText = QString::fromWCharArray(title.c_str());
+        } else {
+            displayText = "无绑定窗口";
         }
-        m_currentWindowLabel->setText(QString("当前窗口: %1").arg(displayTitle));
     } else {
-        m_currentWindowLabel->setText("当前窗口: (未知)");
+        // When idle: show last clicked window (not mouse position)
+        if (m_lastClickedWindowId != 0) {
+            std::wstring title = m_platformAdapter->getWindowTitleW(m_lastClickedWindowId);
+            displayText = QString::fromWCharArray(title.c_str());
+        } else {
+            displayText = "(等待点击检测)";
+        }
     }
+
+    if (displayText.length() > 30) {
+        displayText = displayText.left(30) + "...";
+    }
+    m_currentWindowLabel->setText(QString("当前窗口: %1").arg(displayText));
 }
 
 void MainWindow::onRefreshWindowsClicked()
@@ -737,7 +712,8 @@ void MainWindow::onRefreshWindowsClicked()
 
     auto windows = m_platformAdapter->listWindows();
     for (const auto& win : windows) {
-        QString title = QString::fromStdString(win.title);
+        // Use Unicode title
+        QString title = QString::fromWCharArray(win.title.c_str());
         if (title.length() > 40) {
             title = title.left(40) + "...";
         }
@@ -758,8 +734,9 @@ void MainWindow::onTargetWindowSelected(int index)
     if (m_targetWindowId == 0) {
         m_elementInfoLabel->setText("自动检测模式 - 点击当前窗口");
     } else {
-        std::string title = m_platformAdapter->getWindowTitle(m_targetWindowId);
-        m_elementInfoLabel->setText(QString("绑定窗口: %1").arg(QString::fromStdString(title).left(20)));
+        std::wstring title = m_platformAdapter->getWindowTitleW(m_targetWindowId);
+        QString displayTitle = QString::fromWCharArray(title.c_str()).left(20);
+        m_elementInfoLabel->setText(QString("绑定窗口: %1").arg(displayTitle));
     }
 }
 
@@ -770,7 +747,7 @@ void MainWindow::onFindElementClicked()
         m_targetWindowId = m_platformAdapter->getForegroundWindowId();
     }
 
-    std::string searchText = m_elementTextEdit->text().toStdString();
+    std::wstring searchText = m_elementTextEdit->text().toStdWString();
     if (searchText.empty()) {
         m_elementInfoLabel->setText("请输入元素文本");
         m_elementInfoLabel->setStyleSheet("font-size: 12px; color: #f44336; padding: 5px; background: #ffebee; border-radius: 4px;");
@@ -782,7 +759,7 @@ void MainWindow::onFindElementClicked()
     if (m_targetElement.windowId != 0) {
         m_hasTargetElement = true;
         QString info = QString("找到: \"%1\" @ (%2, %3) %4x%5")
-            .arg(QString::fromStdString(m_targetElement.text).left(15))
+            .arg(QString::fromWCharArray(m_targetElement.text.c_str()).left(15))
             .arg(m_targetElement.relativeX)
             .arg(m_targetElement.relativeY)
             .arg(m_targetElement.width)
@@ -793,5 +770,160 @@ void MainWindow::onFindElementClicked()
         m_hasTargetElement = false;
         m_elementInfoLabel->setText(QString("未找到: \"%1\"").arg(m_elementTextEdit->text()));
         m_elementInfoLabel->setStyleSheet("font-size: 12px; color: #f44336; padding: 5px; background: #ffebee; border-radius: 4px;");
+    }
+}
+
+void MainWindow::onDeleteSequenceItemClicked()
+{
+    int row = m_sequenceList->currentRow();
+    if (row >= 0 && row < m_sequencePoints.size()) {
+        m_sequenceList->takeItem(row);
+        m_sequencePoints.removeAt(row);
+        m_recordStatusLabel->setText(QString("已录制 %1 个点").arg(m_sequencePoints.size()));
+    }
+}
+
+void MainWindow::onMoveSequenceItemUp()
+{
+    int row = m_sequenceList->currentRow();
+    if (row > 0 && row < m_sequencePoints.size()) {
+        QListWidgetItem* item = m_sequenceList->takeItem(row);
+        m_sequenceList->insertItem(row - 1, item);
+        m_sequenceList->setCurrentRow(row - 1);
+        m_sequencePoints.swapItemsAt(row, row - 1);
+    }
+}
+
+void MainWindow::onMoveSequenceItemDown()
+{
+    int row = m_sequenceList->currentRow();
+    if (row >= 0 && row < m_sequencePoints.size() - 1) {
+        QListWidgetItem* item = m_sequenceList->takeItem(row);
+        m_sequenceList->insertItem(row + 1, item);
+        m_sequenceList->setCurrentRow(row + 1);
+        m_sequencePoints.swapItemsAt(row, row + 1);
+    }
+}
+
+void MainWindow::onSequenceItemDoubleClicked(QListWidgetItem* item)
+{
+    if (!item) return;
+
+    int row = m_sequenceList->row(item);
+    if (row < 0 || row >= m_sequencePoints.size()) return;
+
+    SequencePoint& point = m_sequencePoints[row];
+
+    // Create a simple input dialog inline
+    QDialog dialog(this);
+    dialog.setWindowTitle("编辑坐标");
+    dialog.setModal(true);
+
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+    layout->setSpacing(10);
+
+    QHBoxLayout* xLayout = new QHBoxLayout();
+    QLabel* xLabel = new QLabel("X:", &dialog);
+    QSpinBox* xSpin = new QSpinBox(&dialog);
+    xSpin->setRange(0, 9999);
+    xSpin->setValue(point.screenX);
+    xLayout->addWidget(xLabel);
+    xLayout->addWidget(xSpin);
+
+    QHBoxLayout* yLayout = new QHBoxLayout();
+    QLabel* yLabel = new QLabel("Y:", &dialog);
+    QSpinBox* ySpin = new QSpinBox(&dialog);
+    ySpin->setRange(0, 9999);
+    ySpin->setValue(point.screenY);
+    yLayout->addWidget(yLabel);
+    yLayout->addWidget(ySpin);
+
+    layout->addLayout(xLayout);
+    layout->addLayout(yLayout);
+
+    QPushButton* okBtn = new QPushButton("确定", &dialog);
+    okBtn->setStyleSheet("QPushButton { padding: 8px 20px; background: #4CAF50; color: white; border-radius: 4px; }");
+    connect(okBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
+    layout->addWidget(okBtn);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        point.screenX = xSpin->value();
+        point.screenY = ySpin->value();
+
+        // Update relative coordinates if window binding exists
+        if (point.windowId != 0) {
+            WindowInfo winInfo = m_platformAdapter->getWindowInfo(point.windowId);
+            point.relX = point.screenX - winInfo.x;
+            point.relY = point.screenY - winInfo.y;
+        }
+
+        // Update display
+        updateSequenceListDisplay();
+        m_sequenceList->setCurrentRow(row);
+    }
+}
+
+void MainWindow::onSequenceContextMenuRequested(const QPoint& pos)
+{
+    QListWidgetItem* item = m_sequenceList->itemAt(pos);
+    if (!item) return;
+
+    QMenu menu(this);
+    menu.setStyleSheet("QMenu { background: #fff; border: 1px solid #ddd; } QMenu::item { padding: 5px 20px; } QMenu::item:selected { background: #e3f2fd; }");
+
+    QAction* editAction = menu.addAction("编辑坐标");
+    QAction* deleteAction = menu.addAction("删除");
+    menu.addSeparator();
+    QAction* moveUpAction = menu.addAction("上移");
+    QAction* moveDownAction = menu.addAction("下移");
+
+    connect(editAction, &QAction::triggered, this, [this]() {
+        onSequenceItemDoubleClicked(m_sequenceList->currentItem());
+    });
+    connect(deleteAction, &QAction::triggered, this, &MainWindow::onDeleteSequenceItemClicked);
+    connect(moveUpAction, &QAction::triggered, this, &MainWindow::onMoveSequenceItemUp);
+    connect(moveDownAction, &QAction::triggered, this, &MainWindow::onMoveSequenceItemDown);
+
+    menu.exec(m_sequenceList->mapToGlobal(pos));
+}
+
+void MainWindow::updateSequenceListDisplay()
+{
+    m_sequenceList->clear();
+
+    for (const SequencePoint& point : m_sequencePoints) {
+        // Format button type
+        QString buttonIcon;
+        switch (point.button) {
+            case RecordedButton::Left: buttonIcon = "左"; break;
+            case RecordedButton::Right: buttonIcon = "右"; break;
+            case RecordedButton::Middle: buttonIcon = "中"; break;
+        }
+
+        // Format window label
+        QString windowLabel;
+        if (point.windowId != 0 && !point.windowTitle.empty()) {
+            windowLabel = QString::fromWCharArray(point.windowTitle.c_str()).left(15);
+        } else {
+            windowLabel = "无窗口";
+        }
+
+        QString itemText = QString("[%1] (%2, %3) - %4")
+            .arg(buttonIcon)
+            .arg(point.screenX)
+            .arg(point.screenY)
+            .arg(windowLabel);
+
+        m_sequenceList->addItem(itemText);
+    }
+}
+
+void MainWindow::onWindowLabelHovered(QListWidgetItem* item)
+{
+    if (!item) return;
+
+    uintptr_t windowId = item->data(Qt::UserRole).toULongLong();
+    if (windowId != 0) {
+        m_platformAdapter->highlightWindow(windowId, 500);
     }
 }

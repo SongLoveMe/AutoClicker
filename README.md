@@ -2,7 +2,7 @@
 
 一个基于 Qt 6 开发的跨平台自动点击工具，支持多种点击模式和自定义配置。
 
-![版本](https://img.shields.io/badge/version-2.0-blue)
+![版本](https://img.shields.io/badge/version-2.1-blue)
 ![语言](https://img.shields.io/badge/language-C++17-orange)
 ![框架](https://img.shields.io/badge/framework-Qt%206.5.3-green)
 ![许可](https://img.shields.io/badge/license-MIT-purple)
@@ -249,10 +249,10 @@ AutoClicker/
 
 ### v2.1 规划
 
+- [ ] 完善窗口绑定深层问题（某些应用不响应 PostMessage）
 - [ ] 完善随机区域模式
 - [ ] 实现拖拽模式
 - [ ] 添加配置保存/加载菜单
-- [ ] 多语言支持（中/英切换）
 
 ### v2.2 规划
 
@@ -301,6 +301,18 @@ SOFTWARE.
 ---
 
 ## 📝 更新日志
+
+### v2.1 (2026-05-16)
+
+**🐛 Bug修复**
+- ✅ 无干扰模式 - 使用 simulateClickToWindow 直接发送消息到目标窗口
+- ✅ 录制逻辑 - 使用窗口身份过滤而非矩形区域，窗口最小化时仍能正确过滤
+- ✅ 点击次数 - 默认改为0（防止误触），逻辑修复确保 count=0 时立即停止
+- ✅ 窗口置顶 - 默认开启，启动时自动置顶
+
+**🔧 改进**
+- ✅ 窗口绑定 - 录制时自动记录窗口ID，点击时追踪窗口位置
+- ✅ 配置优化 - 默认配置更安全（clickCount: 0, stayOnTop: true）
 
 ### v2.0 (2026-05-16)
 

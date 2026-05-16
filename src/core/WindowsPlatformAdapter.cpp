@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QGuiApplication>
 #include <QDebug>
+#include <QThread>
 
 WindowsPlatformAdapter::WindowsPlatformAdapter()
     : m_hwnd(nullptr)
@@ -91,21 +92,23 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
         return;
     }
 
-    // SendMessage method - no interference with mouse
+    // Get top-level window at point
     POINT pt = {x, y};
-    HWND targetWindow = WindowFromPoint(pt);
-
-    if (!targetWindow) {
-        // Fallback to SendInput if no window found
+    HWND childWindow = WindowFromPoint(pt);
+    if (!childWindow) {
         simulateClick(x, y, button, action);
         return;
     }
 
-    // Get window relative coordinates
-    RECT rect;
-    GetWindowRect(targetWindow, &rect);
-    int relX = x - rect.left;
-    int relY = y - rect.top;
+    // Get top-level parent window (critical fix for message delivery)
+    HWND topLevelWindow = GetAncestor(childWindow, GA_ROOT);
+    if (!topLevelWindow) {
+        topLevelWindow = childWindow;
+    }
+
+    // Convert to client area coordinates
+    POINT clientPt = pt;
+    ScreenToClient(topLevelWindow, &clientPt);
 
     // Determine button flags
     WPARAM wParam = 0;
@@ -121,7 +124,7 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
             break;
     }
 
-    LPARAM lParam = MAKELPARAM(relX, relY);
+    LPARAM lParam = MAKELPARAM(clientPt.x, clientPt.y);
 
     int clickCount = 1;
     switch (action) {
@@ -157,15 +160,86 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
             break;
     }
 
-    // Send click messages
+    // Use SendMessageTimeout for synchronous delivery (more reliable than PostMessage)
+    DWORD_PTR result;
+
     for (int i = 0; i < clickCount; ++i) {
-        PostMessage(targetWindow, downMsg, wParam, lParam);
-        Sleep(10);
-        PostMessage(targetWindow, upMsg, 0, lParam);
+        SendMessageTimeoutW(topLevelWindow, downMsg, wParam, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+        SendMessageTimeoutW(topLevelWindow, upMsg, 0, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
 
         if (i < clickCount - 1) {
-            Sleep(50);
+            QThread::msleep(50);  // Use Qt's thread sleep
         }
+    }
+
+    // For double-click, also send WM_LBUTTONDBLCLK
+    if (action == ClickAction::Double && button == MouseButton::Left) {
+        SendMessageTimeoutW(topLevelWindow, WM_LBUTTONDBLCLK, wParam, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+    }
+}
+
+void WindowsPlatformAdapter::simulateClickToWindow(uintptr_t windowId, int relX, int relY, MouseButton button, ClickAction action)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    if (!hwnd) return;
+
+    // Determine button flags and messages
+    WPARAM wParam = 0;
+    UINT downMsg, upMsg;
+
+    switch (button) {
+        case MouseButton::Left:
+            wParam = MK_LBUTTON;
+            downMsg = WM_LBUTTONDOWN;
+            upMsg = WM_LBUTTONUP;
+            break;
+        case MouseButton::Right:
+            wParam = MK_RBUTTON;
+            downMsg = WM_RBUTTONDOWN;
+            upMsg = WM_RBUTTONUP;
+            break;
+        case MouseButton::Middle:
+            wParam = MK_MBUTTON;
+            downMsg = WM_MBUTTONDOWN;
+            upMsg = WM_MBUTTONUP;
+            break;
+    }
+
+    LPARAM lParam = MAKELPARAM(relX, relY);
+
+    int clickCount = 1;
+    switch (action) {
+        case ClickAction::Single: clickCount = 1; break;
+        case ClickAction::Double: clickCount = 2; break;
+        case ClickAction::Triple: clickCount = 3; break;
+        case ClickAction::Hold: clickCount = 1; break;
+    }
+
+    // Use SendMessageTimeout for synchronous delivery
+    DWORD_PTR result;
+
+    for (int i = 0; i < clickCount; ++i) {
+        SendMessageTimeoutW(hwnd, downMsg, wParam, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+        SendMessageTimeoutW(hwnd, upMsg, 0, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+
+        if (action == ClickAction::Hold) {
+            QThread::msleep(100);
+        }
+
+        if (i < clickCount - 1) {
+            QThread::msleep(50);
+        }
+    }
+
+    // For double-click, also send WM_LBUTTONDBLCLK
+    if (action == ClickAction::Double && button == MouseButton::Left) {
+        SendMessageTimeoutW(hwnd, WM_LBUTTONDBLCLK, wParam, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
     }
 }
 
@@ -235,31 +309,7 @@ bool WindowsPlatformAdapter::handleHotkeyEvent(int id)
 WindowInfo WindowsPlatformAdapter::getActiveWindow()
 {
     HWND hwnd = GetForegroundWindow();
-    WindowInfo info;
-    info.id = reinterpret_cast<uintptr_t>(hwnd);
-
-    char title[256];
-    GetWindowTextA(hwnd, title, sizeof(title));
-    info.title = title;
-
-    RECT rect;
-    GetWindowRect(hwnd, &rect);
-    info.x = rect.left;
-    info.y = rect.top;
-    info.width = rect.right - rect.left;
-    info.height = rect.bottom - rect.top;
-
-    DWORD processId;
-    GetWindowThreadProcessId(hwnd, &processId);
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
-    if (hProcess) {
-        char processName[MAX_PATH];
-        GetModuleFileNameExA(hProcess, nullptr, processName, MAX_PATH);
-        info.processName = processName;
-        CloseHandle(hProcess);
-    }
-
-    return info;
+    return getWindowInfo(reinterpret_cast<uintptr_t>(hwnd));
 }
 
 std::vector<WindowInfo> WindowsPlatformAdapter::listWindows()
@@ -270,12 +320,16 @@ std::vector<WindowInfo> WindowsPlatformAdapter::listWindows()
         auto* list = reinterpret_cast<std::vector<WindowInfo>*>(lParam);
 
         if (IsWindowVisible(hwnd)) {
-            WindowInfo info;
-            info.id = reinterpret_cast<uintptr_t>(hwnd);
+            int length = GetWindowTextLengthW(hwnd);
+            if (length > 0) {
+                WindowInfo info;
+                info.id = reinterpret_cast<uintptr_t>(hwnd);
 
-            char title[256];
-            GetWindowTextA(hwnd, title, sizeof(title));
-            if (strlen(title) > 0) {
+                // Use Unicode API
+                std::wstring title;
+                title.resize(length + 1);
+                GetWindowTextW(hwnd, &title[0], length + 1);
+                title.resize(length);  // Remove null terminator
                 info.title = title;
 
                 RECT rect;
@@ -284,6 +338,17 @@ std::vector<WindowInfo> WindowsPlatformAdapter::listWindows()
                 info.y = rect.top;
                 info.width = rect.right - rect.left;
                 info.height = rect.bottom - rect.top;
+
+                // Get process name
+                DWORD processId;
+                GetWindowThreadProcessId(hwnd, &processId);
+                HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
+                if (hProcess) {
+                    WCHAR processName[MAX_PATH];
+                    GetModuleFileNameExW(hProcess, nullptr, processName, MAX_PATH);
+                    info.processName = processName;
+                    CloseHandle(hProcess);
+                }
 
                 list->push_back(info);
             }
@@ -345,11 +410,33 @@ int WindowsPlatformAdapter::mapModifiersToModFlags(int modifiers)
 // Static member initialization
 WindowsPlatformAdapter* WindowsPlatformAdapter::s_instance = nullptr;
 
+bool WindowsPlatformAdapter::shouldFilterClick(int x, int y)
+{
+    if (!m_hwnd) return false;
+
+    HWND autoClickerWindow = GetAncestor(m_hwnd, GA_ROOT);
+    if (!autoClickerWindow) return false;
+
+    // Get the window at the click position
+    POINT pt = {x, y};
+    HWND clickedWindow = WindowFromPoint(pt);
+
+    // Check if the clicked window belongs to AutoClicker (either root or child)
+    HWND clickedRoot = GetAncestor(clickedWindow, GA_ROOT);
+
+    return (clickedRoot == autoClickerWindow);
+}
+
 // Mouse hook implementation
 LRESULT CALLBACK WindowsPlatformAdapter::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
     if (nCode >= 0 && s_instance && s_instance->m_mouseHookCallback) {
         MSLLHOOKSTRUCT* info = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+
+        // Filter clicks inside the AutoClicker window
+        if (s_instance->shouldFilterClick(info->pt.x, info->pt.y)) {
+            return CallNextHookEx(s_instance->m_mouseHook, nCode, wParam, lParam);
+        }
 
         RecordedButton button = RecordedButton::Left;
         bool isClick = false;
@@ -370,6 +457,12 @@ LRESULT CALLBACK WindowsPlatformAdapter::MouseHookProc(int nCode, WPARAM wParam,
             click.x = info->pt.x;
             click.y = info->pt.y;
             click.button = button;
+
+            // Capture window at click position
+            HWND hwndUnderCursor = WindowFromPoint(info->pt);
+            HWND topLevel = GetAncestor(hwndUnderCursor, GA_ROOT);
+            click.windowId = reinterpret_cast<uintptr_t>(topLevel);
+
             s_instance->m_mouseHookCallback(click);
         }
     }
@@ -416,8 +509,22 @@ uintptr_t WindowsPlatformAdapter::getForegroundWindowId()
     return reinterpret_cast<uintptr_t>(GetForegroundWindow());
 }
 
+std::wstring WindowsPlatformAdapter::getWindowTitleW(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    int length = GetWindowTextLengthW(hwnd);
+    if (length == 0) return L"";
+
+    std::wstring title;
+    title.resize(length + 1);
+    GetWindowTextW(hwnd, &title[0], length + 1);
+    title.resize(length);  // Remove null terminator
+    return title;
+}
+
 std::string WindowsPlatformAdapter::getWindowTitle(uintptr_t windowId)
 {
+    // Legacy ANSI version for compatibility
     HWND hwnd = reinterpret_cast<HWND>(windowId);
     char title[256];
     GetWindowTextA(hwnd, title, sizeof(title));
@@ -432,7 +539,94 @@ QPoint WindowsPlatformAdapter::getWindowPosition(uintptr_t windowId)
     return QPoint(rect.left, rect.top);
 }
 
-ElementInfo WindowsPlatformAdapter::findElementByText(uintptr_t windowId, const std::string& text)
+WindowInfo WindowsPlatformAdapter::getWindowInfo(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    WindowInfo info;
+    info.id = windowId;
+
+    // Unicode title
+    int length = GetWindowTextLengthW(hwnd);
+    if (length > 0) {
+        std::wstring title;
+        title.resize(length + 1);
+        GetWindowTextW(hwnd, &title[0], length + 1);
+        title.resize(length);
+        info.title = title;
+    }
+
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+    info.x = rect.left;
+    info.y = rect.top;
+    info.width = rect.right - rect.left;
+    info.height = rect.bottom - rect.top;
+
+    // Get process name
+    DWORD processId;
+    GetWindowThreadProcessId(hwnd, &processId);
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
+    if (hProcess) {
+        WCHAR processName[MAX_PATH];
+        GetModuleFileNameExW(hProcess, nullptr, processName, MAX_PATH);
+        info.processName = processName;
+        CloseHandle(hProcess);
+    }
+
+    return info;
+}
+
+uintptr_t WindowsPlatformAdapter::getWindowAtPoint(int x, int y)
+{
+    POINT pt = {x, y};
+    HWND hwnd = WindowFromPoint(pt);
+    // Return top-level window
+    HWND topLevel = GetAncestor(hwnd, GA_ROOT);
+    return reinterpret_cast<uintptr_t>(topLevel ? topLevel : hwnd);
+}
+
+void WindowsPlatformAdapter::highlightWindow(uintptr_t windowId, int durationMs)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    if (!hwnd) return;
+
+    // Flash window border
+    FlashWindow(hwnd, TRUE);
+
+    // Draw highlight rectangle on window
+    HDC hdc = GetWindowDC(hwnd);
+    if (!hdc) return;
+
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+
+    // Get window dimensions for drawing
+    int width = rect.right - rect.left;
+    int height = rect.bottom - rect.top;
+
+    // Create thick red pen for border
+    HPEN hPen = CreatePen(PS_SOLID, 4, RGB(255, 0, 0));
+    HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
+
+    // Draw rectangle (in window coordinates, so 0,0 is top-left)
+    Rectangle(hdc, 2, 2, width - 2, height - 2);
+
+    // Restore and cleanup after delay using a timer approach
+    // We need to keep the highlight visible for durationMs
+    QThread::msleep(durationMs);
+
+    // Force window to redraw to remove our highlight
+    SelectObject(hdc, hOldPen);
+    SelectObject(hdc, hOldBrush);
+    DeleteObject(hPen);
+    ReleaseDC(hwnd, hdc);
+
+    // Invalidate window to force repaint
+    InvalidateRect(hwnd, nullptr, TRUE);
+}
+
+ElementInfo WindowsPlatformAdapter::findElementByText(uintptr_t windowId, const std::wstring& text)
 {
     HWND hwnd = reinterpret_cast<HWND>(windowId);
     ElementInfo result;
@@ -440,7 +634,7 @@ ElementInfo WindowsPlatformAdapter::findElementByText(uintptr_t windowId, const 
 
     // Context structure for EnumChildWindows callback
     struct FindContext {
-        const std::string& searchText;
+        const std::wstring& searchText;
         ElementInfo* result;
     } context{text, &result};
 
@@ -448,33 +642,38 @@ ElementInfo WindowsPlatformAdapter::findElementByText(uintptr_t windowId, const 
     EnumChildWindows(hwnd, [](HWND child, LPARAM lParam) -> BOOL {
         auto* ctx = reinterpret_cast<FindContext*>(lParam);
 
-        char windowText[256];
-        GetWindowTextA(child, windowText, sizeof(windowText));
+        int length = GetWindowTextLengthW(child);
+        if (length > 0) {
+            std::wstring windowText;
+            windowText.resize(length + 1);
+            GetWindowTextW(child, &windowText[0], length + 1);
+            windowText.resize(length);
 
-        std::string elementText(windowText);
-        if (elementText == ctx->searchText || elementText.find(ctx->searchText) != std::string::npos) {
-            // Found matching element
-            RECT rect;
-            GetWindowRect(child, &rect);
+            if (windowText == ctx->searchText ||
+                windowText.find(ctx->searchText) != std::wstring::npos) {
+                // Found matching element
+                RECT rect;
+                GetWindowRect(child, &rect);
 
-            // Get parent window position for relative coordinates
-            HWND parent = GetParent(child);
-            if (!parent) parent = GetAncestor(child, GA_PARENT);
-            RECT parentRect;
-            GetWindowRect(parent, &parentRect);
+                // Get parent window position for relative coordinates
+                HWND parent = GetParent(child);
+                if (!parent) parent = GetAncestor(child, GA_PARENT);
+                RECT parentRect;
+                GetWindowRect(parent, &parentRect);
 
-            ctx->result->windowId = reinterpret_cast<uintptr_t>(child);
-            ctx->result->text = windowText;
-            ctx->result->relativeX = rect.left - parentRect.left;
-            ctx->result->relativeY = rect.top - parentRect.top;
-            ctx->result->width = rect.right - rect.left;
-            ctx->result->height = rect.bottom - rect.top;
+                ctx->result->windowId = reinterpret_cast<uintptr_t>(child);
+                ctx->result->text = windowText;
+                ctx->result->relativeX = rect.left - parentRect.left;
+                ctx->result->relativeY = rect.top - parentRect.top;
+                ctx->result->width = rect.right - rect.left;
+                ctx->result->height = rect.bottom - rect.top;
 
-            char className[256];
-            GetClassNameA(child, className, sizeof(className));
-            ctx->result->className = className;
+                WCHAR className[256];
+                GetClassNameW(child, className, sizeof(className) / sizeof(WCHAR));
+                ctx->result->className = className;
 
-            return FALSE;  // Stop enumeration
+                return FALSE;  // Stop enumeration
+            }
         }
         return TRUE;  // Continue enumeration
     }, reinterpret_cast<LPARAM>(&context));
@@ -524,17 +723,19 @@ void WindowsPlatformAdapter::clickElement(uintptr_t elementId, MouseButton butto
         case ClickAction::Hold: clickCount = 1; break;
     }
 
+    DWORD_PTR result;
     for (int i = 0; i < clickCount; ++i) {
-        PostMessage(hwnd, downMsg, wParam, lParam);
-        Sleep(10);
-        PostMessage(hwnd, upMsg, 0, lParam);
+        SendMessageTimeoutW(hwnd, downMsg, wParam, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
+        SendMessageTimeoutW(hwnd, upMsg, 0, lParam,
+                           SMTO_BLOCK | SMTO_ABORTIFHUNG, 100, &result);
 
         if (action == ClickAction::Hold) {
-            Sleep(100);
+            QThread::msleep(100);
         }
 
         if (i < clickCount - 1) {
-            Sleep(50);
+            QThread::msleep(50);
         }
     }
 }

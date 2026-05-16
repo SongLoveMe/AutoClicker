@@ -15,6 +15,7 @@ public:
 
     void simulateClick(int x, int y, MouseButton button, ClickAction action, int holdDuration = 100) override;
     void simulateClickNoInterference(int x, int y, MouseButton button, ClickAction action, ClickMethod method = ClickMethod::NoInterference) override;
+    void simulateClickToWindow(uintptr_t windowId, int relX, int relY, MouseButton button, ClickAction action) override;
     void simulateMouseMove(int x, int y) override;
     QPoint getMousePosition() override;
 
@@ -26,13 +27,17 @@ public:
     std::vector<WindowInfo> listWindows() override;
     bool setForegroundWindow(uintptr_t windowId) override;
     uintptr_t getForegroundWindowId() override;
+    std::wstring getWindowTitleW(uintptr_t windowId) override;
     std::string getWindowTitle(uintptr_t windowId) override;
     QPoint getWindowPosition(uintptr_t windowId) override;
+    WindowInfo getWindowInfo(uintptr_t windowId) override;
+    uintptr_t getWindowAtPoint(int x, int y) override;
+    void highlightWindow(uintptr_t windowId, int durationMs = 500) override;
 
     bool startMouseHook(std::function<void(const RecordedClick&)> callback) override;
     void stopMouseHook() override;
 
-    ElementInfo findElementByText(uintptr_t windowId, const std::string& text) override;
+    ElementInfo findElementByText(uintptr_t windowId, const std::wstring& text) override;
     void clickElement(uintptr_t elementId, MouseButton button, ClickAction action) override;
 
 private:
@@ -40,6 +45,7 @@ private:
     DWORD mapMouseButton(MouseButton button);
     int mapKeyToVirtualKey(int key);
     int mapModifiersToModFlags(int modifiers);
+    bool shouldFilterClick(int x, int y);  // Check if click is inside AutoClicker window
 
     QHash<int, std::function<void()>> m_hotkeyCallbacks;
     HWND m_hwnd;

@@ -7,7 +7,7 @@
         "intervalBase": 200,
         "jitterRange": 10,
         "useRandomJitter": false,
-        "clickCount": -1,
+        "clickCount": 0,
         "antiDetect": false
     },
     "position": {
@@ -22,7 +22,7 @@
     "window": {
         "bindWindowTitle": "",
         "bindToWindow": false,
-        "stayOnTop": false
+        "stayOnTop": true
     },
     "general": {
         "language": "zh",
