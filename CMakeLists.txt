@@ -16,6 +16,7 @@ set(SOURCES
     src/MainWindow.cpp
     src/core/WindowsPlatformAdapter.cpp
     src/core/ClickEngine.cpp
+    src/utils/ConfigManager.cpp
 )
 
 set(HEADERS
@@ -23,6 +24,7 @@ set(HEADERS
     src/core/PlatformAdapter.h
     src/core/WindowsPlatformAdapter.h
     src/core/ClickEngine.h
+    src/utils/ConfigManager.h
 )
 
 # Create executable

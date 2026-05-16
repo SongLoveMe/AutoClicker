@@ -1,0 +1,29 @@
+{
+    "click": {
+        "mode": 0,
+        "button": 0,
+        "action": 0,
+        "intervalMin": 100,
+        "intervalMax": 100,
+        "clickCount": -1,
+        "antiDetect": false
+    },
+    "position": {
+        "targetX": 0,
+        "targetY": 0,
+        "sequence": []
+    },
+    "hotkey": {
+        "startStop": 16777273,
+        "pause": 16777274
+    },
+    "window": {
+        "bindWindowTitle": "",
+        "bindToWindow": false
+    },
+    "general": {
+        "language": "en",
+        "minimizeOnStart": false,
+        "showInTaskbar": true
+    }
+}
