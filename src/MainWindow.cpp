@@ -15,6 +15,7 @@
 #include <QDialog>
 #include <QInputDialog>  // v2.2: for interval setting dialog
 #include <QMenu>
+#include <QMetaObject>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -60,8 +61,7 @@ MainWindow::MainWindow(QWidget* parent)
     , m_clickEngine(std::make_shared<ClickEngine>(m_platformAdapter))
 {
     setupUI();
-    // Delay hotkey registration until window is fully shown
-    // This ensures the window handle is properly realized for RegisterHotKey
+    // Delay hook installation until the Qt event loop and main window are ready.
     QTimer::singleShot(100, this, &MainWindow::setupHotkeys);
     setupClickEngine();
     setupWindowUpdateTimer();
@@ -74,24 +74,46 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow()
 {
+#ifdef Q_OS_WIN
+    m_platformAdapter->unregisterHotkey(1);
+    m_platformAdapter->unregisterHotkey(2);
+#endif
+
+    if (m_isRecording) {
+        m_platformAdapter->stopMouseHook();
+        m_isRecording = false;
+    }
 }
 
 void MainWindow::setupHotkeys()
 {
 #ifdef Q_OS_WIN
-    m_platformAdapter->registerHotkey(1, Qt::Key_F6, 0, [this]() {
-        if (m_clickEngine->isRunning()) {
-            onStopClicked();
-        } else {
-            onStartClicked();
-        }
+    const bool startStopRegistered = m_platformAdapter->registerHotkey(1, Qt::Key_F6, 0, [this]() {
+        QMetaObject::invokeMethod(this, [this]() {
+            if (m_clickEngine->isRunning()) {
+                onStopClicked();
+            } else {
+                onStartClicked();
+            }
+        }, Qt::QueuedConnection);
     });
 
-    m_platformAdapter->registerHotkey(2, Qt::Key_F7, 0, [this]() {
-        onPauseClicked();
+    const bool pauseRegistered = m_platformAdapter->registerHotkey(2, Qt::Key_F7, 0, [this]() {
+        QMetaObject::invokeMethod(this, [this]() {
+            onPauseClicked();
+        }, Qt::QueuedConnection);
     });
 
-    qDebug() << "热键已注册: F6 (开始/停止), F7 (暂停)";
+    if (startStopRegistered && pauseRegistered) {
+        qDebug() << "全局热键已注册: F6 (开始/停止), F7 (暂停/继续)";
+        statusBar()->showMessage("就绪 | 全局热键: F6 开始/停止 | F7 暂停/继续");
+    } else {
+        const QString message = startStopRegistered || pauseRegistered
+            ? "部分全局热键注册失败，请检查系统键盘钩子权限"
+            : "全局热键注册失败，请检查系统键盘钩子权限";
+        qWarning() << message;
+        statusBar()->showMessage(message, 10000);
+    }
 #endif
 }
 
@@ -114,15 +136,6 @@ void MainWindow::setupClickEngine()
 
 bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {
-#ifdef Q_OS_WIN
-    MSG* msg = static_cast<MSG*>(message);
-    if (msg->message == WM_HOTKEY) {
-        int hotkeyId = static_cast<int>(msg->wParam);
-        if (m_platformAdapter->handleHotkeyEvent(hotkeyId)) {
-            return true;
-        }
-    }
-#endif
     return QMainWindow::nativeEvent(eventType, message, result);
 }
 

@@ -27,8 +27,12 @@ set(HEADERS
     src/utils/ConfigManager.h
 )
 
-# Create executable
-add_executable(AutoClicker ${SOURCES} ${HEADERS})
+# Create a GUI executable on Windows so launching the .exe does not open a console.
+if(WIN32)
+    add_executable(AutoClicker WIN32 ${SOURCES} ${HEADERS})
+else()
+    add_executable(AutoClicker ${SOURCES} ${HEADERS})
+endif()
 
 # Link Qt libraries
 target_link_libraries(AutoClicker PRIVATE

@@ -11,12 +11,17 @@ WindowsPlatformAdapter::WindowsPlatformAdapter()
 
 WindowsPlatformAdapter::~WindowsPlatformAdapter()
 {
-    // Stop mouse hook if active
     stopMouseHook();
 
-    // Unregister all hotkeys
-    for (auto it = m_hotkeyCallbacks.begin(); it != m_hotkeyCallbacks.end(); ++it) {
-        UnregisterHotKey(m_hwnd, it.key());
+    m_hotkeyBindings.clear();
+    if (m_keyboardHook) {
+        if (!UnhookWindowsHookEx(m_keyboardHook)) {
+            qWarning() << "Failed to remove keyboard hook, error=" << GetLastError();
+        }
+        m_keyboardHook = nullptr;
+    }
+    if (s_keyboardInstance == this) {
+        s_keyboardInstance = nullptr;
     }
 }
 
@@ -272,50 +277,134 @@ QPoint WindowsPlatformAdapter::getMousePosition()
 
 bool WindowsPlatformAdapter::registerHotkey(int id, int key, int modifiers, std::function<void()> callback)
 {
-    // Get window handle - must be a visible window for hotkey registration
-    if (!m_hwnd) {
-        QWidget* mainWindow = QApplication::topLevelWidgets().isEmpty() ? nullptr : QApplication::topLevelWidgets().first();
-        if (mainWindow && mainWindow->isVisible()) {
-            m_hwnd = reinterpret_cast<HWND>(mainWindow->winId());
-        }
-    }
-
-    // Verify window handle is valid
-    if (!m_hwnd || !IsWindow(m_hwnd)) {
-        qWarning() << "Cannot register hotkey: invalid window handle";
-        m_hwnd = nullptr;
+    if (id < 0 || !callback) {
+        qWarning() << "Cannot register hotkey: invalid id or callback";
         return false;
     }
 
-    int vk = mapKeyToVirtualKey(key);
-    int mod = mapModifiersToModFlags(modifiers);
-
-    if (RegisterHotKey(m_hwnd, id, mod, vk)) {
-        m_hotkeyCallbacks[id] = callback;
-        qDebug() << "Hotkey registered: id=" << id << "key=" << key;
-        return true;
+    const int virtualKey = mapKeyToVirtualKey(key);
+    const UINT modifierFlags = static_cast<UINT>(mapModifiersToModFlags(modifiers));
+    if (virtualKey <= 0) {
+        qWarning() << "Cannot register hotkey: unsupported key=" << key;
+        return false;
     }
 
-    qWarning() << "Failed to register hotkey: id=" << id << "error=" << GetLastError();
-    return false;
+    if (s_keyboardInstance && s_keyboardInstance != this) {
+        qWarning() << "Cannot register hotkey: another adapter owns the global keyboard hook";
+        return false;
+    }
+
+    if (!m_keyboardHook) {
+        HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardHookProc,
+                                       GetModuleHandleW(nullptr), 0);
+        if (!hook) {
+            qWarning() << "Failed to install keyboard hook, error=" << GetLastError();
+            return false;
+        }
+        m_keyboardHook = hook;
+        s_keyboardInstance = this;
+    }
+
+    HotkeyBinding binding;
+    binding.virtualKey = virtualKey;
+    binding.modifiers = modifierFlags;
+    binding.callback = std::move(callback);
+    m_hotkeyBindings.insert(id, std::move(binding));
+    qDebug() << "Global hotkey registered: id=" << id << "key=" << key;
+    return true;
 }
 
 bool WindowsPlatformAdapter::unregisterHotkey(int id)
 {
-    if (UnregisterHotKey(m_hwnd, id)) {
-        m_hotkeyCallbacks.remove(id);
-        return true;
+    if (!m_hotkeyBindings.contains(id)) {
+        return false;
     }
-    return false;
+
+    m_hotkeyBindings.remove(id);
+    if (m_hotkeyBindings.isEmpty() && m_keyboardHook) {
+        if (!UnhookWindowsHookEx(m_keyboardHook)) {
+            qWarning() << "Failed to remove keyboard hook, error=" << GetLastError();
+            return false;
+        }
+        m_keyboardHook = nullptr;
+        if (s_keyboardInstance == this) {
+            s_keyboardInstance = nullptr;
+        }
+    }
+    return true;
 }
 
 bool WindowsPlatformAdapter::handleHotkeyEvent(int id)
 {
-    if (m_hotkeyCallbacks.contains(id)) {
-        m_hotkeyCallbacks[id]();
-        return true;
+    auto it = m_hotkeyBindings.constFind(id);
+    if (it == m_hotkeyBindings.constEnd()) {
+        return false;
     }
-    return false;
+    it->callback();
+    return true;
+}
+
+UINT WindowsPlatformAdapter::getCurrentModifierFlags() const
+{
+    UINT modifiers = 0;
+    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) modifiers |= MOD_CONTROL;
+    if (GetAsyncKeyState(VK_SHIFT) & 0x8000) modifiers |= MOD_SHIFT;
+    if (GetAsyncKeyState(VK_MENU) & 0x8000) modifiers |= MOD_ALT;
+    if (GetAsyncKeyState(VK_LWIN) & 0x8000 || GetAsyncKeyState(VK_RWIN) & 0x8000) modifiers |= MOD_WIN;
+    return modifiers;
+}
+
+bool WindowsPlatformAdapter::matchesHotkey(const HotkeyBinding& binding, DWORD virtualKey) const
+{
+    return binding.virtualKey == static_cast<int>(virtualKey)
+        && binding.modifiers == getCurrentModifierFlags();
+}
+
+LRESULT CALLBACK WindowsPlatformAdapter::KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode < 0 || !s_keyboardInstance) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
+    auto* info = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+    if (!info) {
+        return CallNextHookEx(s_keyboardInstance->m_keyboardHook, nCode, wParam, lParam);
+    }
+
+    const bool keyDown = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+    const bool keyUp = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
+    if (!keyDown && !keyUp) {
+        return CallNextHookEx(s_keyboardInstance->m_keyboardHook, nCode, wParam, lParam);
+    }
+
+    for (auto it = s_keyboardInstance->m_hotkeyBindings.begin();
+         it != s_keyboardInstance->m_hotkeyBindings.end(); ++it) {
+        HotkeyBinding& binding = it.value();
+        if (binding.virtualKey != static_cast<int>(info->vkCode)) {
+            continue;
+        }
+
+        if (keyDown) {
+            if (binding.pressed) {
+                // Swallow auto-repeat events for a hotkey that was already consumed.
+                return 1;
+            }
+            if (!s_keyboardInstance->matchesHotkey(binding, info->vkCode)) {
+                continue;
+            }
+            binding.pressed = true;
+            binding.callback();
+            return 1;
+        }
+
+        if (binding.pressed) {
+            // Always consume the matching key-up, even if a modifier was released first.
+            binding.pressed = false;
+            return 1;
+        }
+    }
+
+    return CallNextHookEx(s_keyboardInstance->m_keyboardHook, nCode, wParam, lParam);
 }
 
 WindowInfo WindowsPlatformAdapter::getActiveWindow()
@@ -420,6 +509,7 @@ int WindowsPlatformAdapter::mapModifiersToModFlags(int modifiers)
 }
 
 // Static member initialization
+WindowsPlatformAdapter* WindowsPlatformAdapter::s_keyboardInstance = nullptr;
 WindowsPlatformAdapter* WindowsPlatformAdapter::s_instance = nullptr;
 
 bool WindowsPlatformAdapter::shouldFilterClick(int x, int y)

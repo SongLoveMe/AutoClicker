@@ -48,19 +48,31 @@ public:
     void clickElement(uintptr_t elementId, MouseButton button, ClickAction action) override;
 
 private:
+    struct HotkeyBinding {
+        int virtualKey = 0;
+        UINT modifiers = 0;
+        bool pressed = false;
+        std::function<void()> callback;
+    };
+
     void sendMouseEvent(DWORD flags, DWORD data = 0);
     void nonBlockingWait(int ms);  // v2.2: non-blocking wait that processes Qt events
     DWORD mapMouseButton(MouseButton button);
     int mapKeyToVirtualKey(int key);
     int mapModifiersToModFlags(int modifiers);
     bool shouldFilterClick(int x, int y);  // Check if click is inside AutoClicker window
+    UINT getCurrentModifierFlags() const;
+    bool matchesHotkey(const HotkeyBinding& binding, DWORD virtualKey) const;
 
-    QHash<int, std::function<void()>> m_hotkeyCallbacks;
+    QHash<int, HotkeyBinding> m_hotkeyBindings;
     HWND m_hwnd;
+    HHOOK m_keyboardHook = nullptr;
     HHOOK m_mouseHook = nullptr;
     std::function<void(const RecordedClick&)> m_mouseHookCallback;
 
-    static WindowsPlatformAdapter* s_instance;  // For hook callback
+    static WindowsPlatformAdapter* s_keyboardInstance;
+    static WindowsPlatformAdapter* s_instance;  // For mouse hook callback
+    static LRESULT CALLBACK KeyboardHookProc(int nCode, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam);
 };
 
