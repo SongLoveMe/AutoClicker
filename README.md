@@ -2,7 +2,7 @@
 
 一个基于 Qt 6 开发的跨平台自动点击工具，支持多种点击模式和自定义配置。
 
-![版本](https://img.shields.io/badge/version-2.2-blue)
+![版本](https://img.shields.io/badge/version-2.3.0-blue)
 ![语言](https://img.shields.io/badge/language-C++17-orange)
 ![框架](https://img.shields.io/badge/framework-Qt%206.5.3-green)
 ![许可](https://img.shields.io/badge/license-MIT-purple)
@@ -177,6 +177,10 @@ F6/F7 使用 Windows 全局低级键盘钩子捕获，不依赖 AutoClicker 是�
 
 ### 环境要求
 
+运行已发布安装包：Windows 10/11 64 位。
+
+从源码构建：Windows 开发环境，使用 Qt 6.5.3 + MinGW 13.1.0 + Ninja。
+
 | 组件 | 版本 | 说明 |
 |------|------|------|
 | Qt | 6.5.3+ | GUI框架 |
@@ -210,6 +214,7 @@ cd d:\other\Tool_Collection\AutoClicker
 # 3. 配置项目
 cmake -G "Ninja" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_PREFIX_PATH=D:/Qt/6.5.3/mingw_64 \
     -DCMAKE_C_COMPILER=D:/Qt/Tools/mingw1310_64/bin/gcc.exe \
     -DCMAKE_CXX_COMPILER=D:/Qt/Tools/mingw1310_64/bin/g++.exe \
     -B build
@@ -217,12 +222,43 @@ cmake -G "Ninja" \
 # 4. 构建
 cmake --build build
 
-# 5. 部署Qt依赖（生成可独立运行的exe）
-D:\Qt\6.5.3\mingw_64\bin\windeployqt.exe build\AutoClicker.exe
-
-# 6. 运行
+# 5. 运行
 build\AutoClicker.exe
 ```
+
+### 发布安装包
+
+普通用户应下载并运行安装包，无需安装 Qt、MinGW、CMake 或 Ninja。安装向导支持选择安装目录、选择为所有用户或仅当前用户安装、可选创建桌面快捷方式，并提供卸载入口。
+
+#### 一次性准备
+
+1. 安装 [Inno Setup 6](https://jrsoftware.org/isdl.php)。默认安装路径为 `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`。
+2. 确认 Qt 6.5.3、Qt MinGW 13.1.0、CMake 和 Ninja 位于本 README 所列路径。
+
+#### 每次发布
+
+1. 更新 `CMakeLists.txt` 中的 `project(AutoClicker VERSION x.y.z ...)`。这是程序、安装包和发布文件名的唯一版本来源。
+2. 更新本 README 的版本徽章和更新日志。
+3. 在 PowerShell 中运行：
+
+```powershell
+.\scripts\package.ps1
+```
+
+如 Inno Setup 安装在其他位置，显式指定安装包编译器路径：
+
+```powershell
+.\scripts\package.ps1 -InnoSetupPath "D:\Tools\Inno Setup 6\ISCC.exe"
+```
+
+脚本会使用 Release 配置编译程序，并收集程序所需的 Qt 和 MinGW 运行库，再生成：
+
+```text
+release\AutoClicker-Setup-x.y.z.exe
+release\AutoClicker-Setup-x.y.z.exe.sha256
+```
+
+将 `Setup.exe` 上传到 GitHub Release 或提供给用户即可。新版安装包会覆盖已安装的旧版程序；用户的应用数据目录不会被卸载程序删除。
 
 ---
 
@@ -232,6 +268,10 @@ build\AutoClicker.exe
 AutoClicker/
 ├── README.md                     # 项目说明文档
 ├── CMakeLists.txt                # CMake构建配置
+├── installer/
+│   └── AutoClicker.iss            # Inno Setup 安装包定义
+├── scripts/
+│   └── package.ps1                # 一键发布脚本
 ├── configs/
 │   └── default.json              # 默认配置文件
 ├── src/
@@ -244,6 +284,9 @@ AutoClicker/
 │   └── utils/
 │       └── ConfigManager.h/cpp       # 配置管理
 ├── build/                        # 构建输出目录
+├── build-release/                # 发布构建目录（自动生成，不提交）
+├── dist/                         # 独立运行文件目录（自动生成，不提交）
+├── release/                      # 安装包和SHA-256文件（自动生成，不提交）
 └── .gitignore                    # Git忽略规则
 ```
 
@@ -251,7 +294,7 @@ AutoClicker/
 
 ## 🗺 开发计划
 
-### v2.3 规划
+### v2.4 规划
 
 - [ ] 图像识别触发
 - [ ] Linux/macOS平台适配
@@ -299,13 +342,21 @@ SOFTWARE.
 
 ## 📝 更新日志
 
-### v2.3 (2026-08-12)
+### v2.3.0 (2026-08-12)
 
 **🐛 热键与启动修复**
 - ✅ F6/F7 改用全局低级键盘钩子，不再依赖前台窗口或 `RegisterHotKey` 冲突状态
 - ✅ 热键处理后阻止 F6/F7 继续传递给模拟器和其他前台窗口
 - ✅ 热键注册失败会在状态栏明确提示
 - ✅ 直接运行 Windows GUI 程序不再弹出终端窗口
+
+**📦 发布与安装改进**
+- ✅ CMake 版本号统一为 `2.3.0`，作为程序和安装包版本的唯一来源
+- ✅ 新增 Inno Setup 安装包，支持自定义安装路径、当前用户/所有用户安装和卸载
+- ✅ 桌面快捷方式默认不创建，安装完成后默认启动程序
+- ✅ 安装包内置 Qt 和 MinGW 运行库，目标设备无需安装 Qt、MinGW 或开发工具
+- ✅ 新增 `scripts/package.ps1` 一键生成安装包和 SHA-256 校验文件
+- ✅ 安装向导支持简体中文和英文
 
 ### v2.2 (2026-05-16)
 

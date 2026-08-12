@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(AutoClicker VERSION 1.0.0 LANGUAGES CXX)
+project(AutoClicker VERSION 2.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,11 @@ target_link_libraries(AutoClicker PRIVATE
     Qt6::Gui
 )
 
+# The CMake project version is the canonical version for the executable and installer.
+target_compile_definitions(AutoClicker PRIVATE
+    AUTOCLICKER_VERSION="${PROJECT_VERSION}"
+)
+
 # Windows specific libraries
 if(WIN32)
     target_link_libraries(AutoClicker PRIVATE
@@ -64,5 +69,5 @@ set_target_properties(AutoClicker PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-# Install rules (optional)
-install(TARGETS AutoClicker DESTINATION bin)
+# Install rules
+install(TARGETS AutoClicker RUNTIME DESTINATION .)

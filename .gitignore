@@ -1,7 +1,10 @@
 # Build directories
 build/
+build-release/
 cmake-build-*/
 out/
+dist/
+release/
 
 # Qt generated files
 *.user
@@ -45,3 +48,7 @@ configs/user*.json
 # Claude Code project files (development only, not for release)
 CLAUDE.md
 .claude/
+
+# Local release guide (development only, not for release)
+RELEASE_README.md
+release-notes.md
