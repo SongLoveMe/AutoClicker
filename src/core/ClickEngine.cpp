@@ -1,6 +1,8 @@
 #include "ClickEngine.h"
+#include "SequencePointGeometry.h"
 #include <QRandomGenerator>
 #include <QDebug>
+#include "VisualDetector.h"
 
 ClickEngine::ClickEngine(std::shared_ptr<PlatformAdapter> platform, QObject* parent)
     : QObject(parent)
@@ -79,9 +81,33 @@ void ClickEngine::setAutoStopOnWindowLost(bool enabled)
     m_autoStopOnWindowLost = enabled;
 }
 
+void ClickEngine::setWorkflow(const Workflow& workflow, uintptr_t windowId, int startSequenceIndex)
+{
+    m_workflow = workflow;
+    m_workflowWindowId = windowId;
+    m_hasWorkflow = !workflow.sequences.isEmpty();
+    m_workflowSequenceIndex = qBound(0, startSequenceIndex, qMax(0, workflow.sequences.size() - 1));
+    m_workflowPointIndex = 0;
+    m_workflowPointClickIndex = 0;
+    m_workflowCompletedLoops = 0;
+    m_workflowConsecutiveHits = 0;
+    m_clickMethod = workflow.clickMethod;
+}
+
+void ClickEngine::stopWorkflowWithReason(const QString& reason)
+{
+    emit workflowFinished(reason);
+    stop();
+}
+
 void ClickEngine::start()
 {
     if (m_running) {
+        return;
+    }
+
+    if (m_hasWorkflow && m_clickMethod == ClickMethod::NoInterference && workflowHasVisualConditions()) {
+        emit errorOccurred(QStringLiteral("无干扰后台模式不支持视觉条件，请改用模拟鼠标或移除视觉条件。"));
         return;
     }
 
@@ -90,6 +116,21 @@ void ClickEngine::start()
     m_totalClicks = 0;
     m_currentCount = 0;
     m_sequenceIndex = 0;
+    // Keep the sequence selected by the user when this workflow execution begins.
+    m_workflowPointIndex = 0;
+    m_workflowPointClickIndex = 0;
+    m_workflowCompletedLoops = 0;
+    m_workflowConsecutiveHits = 0;
+    if (m_hasWorkflow) {
+        if (m_workflow.sequences.isEmpty()) {
+            emit errorOccurred(QStringLiteral("工作流没有序列"));
+            m_running = false;
+            return;
+        }
+        emit workflowSequenceChanged(m_workflow.sequences[m_workflowSequenceIndex].name, m_workflowSequenceIndex, 0);
+        QTimer::singleShot(0, this, &ClickEngine::performWorkflowClick);
+        return;
+    }
 
     // Start timer with first interval
     int interval = getRandomInterval();
@@ -126,6 +167,10 @@ void ClickEngine::resume()
 {
     if (m_running && m_paused) {
         m_paused = false;
+        if (m_hasWorkflow) {
+            QTimer::singleShot(0, this, &ClickEngine::performWorkflowClick);
+            return;
+        }
         int interval = getRandomInterval();
         m_timer->start(interval);
         qDebug() << "ClickEngine resumed, interval:" << interval << "ms";
@@ -142,6 +187,17 @@ bool ClickEngine::isPaused() const
     return m_paused;
 }
 
+bool ClickEngine::workflowHasVisualConditions() const
+{
+    for (const WorkflowSequence& sequence : m_workflow.sequences) {
+        if (sequence.transition.enabled
+            && sequence.transition.type != VisualConditionType::LoopEnd) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int ClickEngine::getTotalClicks() const
 {
     return m_totalClicks;
@@ -154,6 +210,7 @@ uintptr_t ClickEngine::getCurrentTargetWindowId() const
 
 void ClickEngine::performClick()
 {
+    if (m_hasWorkflow) { performWorkflowClick(); return; }
     // Stop timer during click execution
     m_timer->stop();
 
@@ -237,18 +294,14 @@ void ClickEngine::performClick()
                     }
 
                     // Use per-point window binding
-                    if (pt.windowId != 0) {
-                        WindowInfo winInfo = m_platform->getWindowPlacementInfo(pt.windowId);
-
-                        if (winInfo.id == pt.windowId || winInfo.title == pt.windowTitle) {
-                            bool isMinimized = m_platform->isWindowMinimized(pt.windowId);
-                            if (isMinimized) {
-                                qDebug() << "Target window is minimized, using restored position";
-                            }
-
-                            clickX = winInfo.x + pt.relX;
-                            clickY = winInfo.y + pt.relY;
-                            clickWindowId = pt.windowId;
+                    if (pointHasWindowBinding(pt)) {
+                        uintptr_t resolvedId = m_platform->findWindowByLocator(pt.windowTitle, pt.processName, pt.windowClass);
+                        WindowInfo winInfo = resolvedId ? (m_platform->isWindowMinimized(resolvedId) ? m_platform->getWindowPlacementInfo(resolvedId) : m_platform->getWindowInfo(resolvedId)) : m_platform->getWindowPlacementInfo(pt.windowId);
+                        if (winInfo.id && (resolvedId || winInfo.id == pt.windowId || winInfo.title == pt.windowTitle)) {
+                            const ResolvedPointGeometry resolved = resolveSequencePoint(pt, &winInfo);
+                            clickX = resolved.globalX;
+                            clickY = resolved.globalY;
+                            clickWindowId = winInfo.id;
                         } else {
                             // v2.2: Window has been closed - emit signal and optionally stop
                             QString windowTitleStr = QString::fromWCharArray(pt.windowTitle.c_str());
@@ -318,6 +371,116 @@ void ClickEngine::performClick()
             performClick();
         }
     });
+}
+
+void ClickEngine::performWorkflowClick()
+{
+    if (!m_running || m_paused || m_workflowSequenceIndex < 0 || m_workflowSequenceIndex >= m_workflow.sequences.size()) return;
+    if (m_clickCount >= 0 && m_currentCount >= m_clickCount) { stopWorkflowWithReason(QStringLiteral("达到全局点击上限")); return; }
+    const WorkflowSequence& sequence = m_workflow.sequences[m_workflowSequenceIndex];
+    if (sequence.points.isEmpty()) { stopWorkflowWithReason(QStringLiteral("序列“%1”没有点击点").arg(sequence.name)); return; }
+    const SequencePoint& pt = sequence.points[m_workflowPointIndex];
+    int x = pt.screenX, y = pt.screenY;
+    uintptr_t window = pt.windowId;
+    if (pointHasWindowBinding(pt)) {
+        window = m_platform->findWindowByLocator(pt.windowTitle, pt.processName, pt.windowClass);
+        if (!window) {
+            const QString label = QString::fromStdWString(pt.windowTitle).isEmpty()
+                ? QString::fromStdWString(pt.windowClass) : QString::fromStdWString(pt.windowTitle);
+            stopWorkflowWithReason(QStringLiteral("序列点绑定窗口无法重新定位：%1").arg(label));
+            return;
+        }
+        const WindowInfo info = m_platform->isWindowMinimized(window) ? m_platform->getWindowPlacementInfo(window) : m_platform->getWindowInfo(window);
+        if (!info.id) { stopWorkflowWithReason(QStringLiteral("序列点绑定窗口不可用")); return; }
+        const ResolvedPointGeometry resolved = resolveSequencePoint(pt, &info);
+        x = resolved.globalX;
+        y = resolved.globalY;
+        m_workflowWindowId = window;
+        if (m_clickMethod != ClickMethod::NoInterference
+            && (m_platform->isWindowMinimized(window) || m_platform->getForegroundWindowId() != window)) {
+            stopWorkflowWithReason(QStringLiteral("序列点绑定窗口不可见、最小化或不在前台：%1").arg(QString::fromStdWString(pt.windowTitle)));
+            return;
+        }
+    }
+    if (m_antiDetect) { const QPoint offset = getRandomOffset(); x += offset.x(); y += offset.y(); }
+    if (m_clickMethod == ClickMethod::NoInterference && window != 0) {
+        const WindowInfo info = m_platform->isWindowMinimized(window) ? m_platform->getWindowPlacementInfo(window) : m_platform->getWindowInfo(window);
+        if (!info.id) { stopWorkflowWithReason(QStringLiteral("序列点绑定窗口不可用")); return; }
+        m_platform->simulateClickToWindow(window, x - info.x, y - info.y, toMouseButton(pt.button), m_action);
+    } else {
+        m_platform->simulateClick(x, y, toMouseButton(pt.button), m_action);
+    }
+    ++m_totalClicks; ++m_currentCount; m_currentTargetWindowId = window; emit clickPerformed(x, y, window);
+    ++m_workflowPointClickIndex;
+    const int pointClickCount = qMax(1, pt.clickCount);
+    if (m_workflowPointClickIndex < pointClickCount) {
+        QTimer::singleShot(qMax(1, pt.clickIntervalMs), this, &ClickEngine::performWorkflowClick);
+        return;
+    }
+    m_workflowPointClickIndex = 0;
+    ++m_workflowPointIndex;
+    const int delay = pt.intervalMs > 0 ? pt.intervalMs : getRandomInterval();
+    if (m_workflowPointIndex < sequence.points.size()) { QTimer::singleShot(delay, this, &ClickEngine::performWorkflowClick); return; }
+    m_workflowPointIndex = 0; ++m_workflowCompletedLoops;
+    emit workflowSequenceChanged(sequence.name, m_workflowSequenceIndex, m_workflowCompletedLoops);
+    QTimer::singleShot(delay, this, &ClickEngine::checkWorkflowTransition);
+}
+
+void ClickEngine::checkWorkflowTransition()
+{
+    if (!m_running || m_paused) return;
+    WorkflowSequence& sequence = m_workflow.sequences[m_workflowSequenceIndex];
+    const bool exhausted = sequence.loopCount != -1 && m_workflowCompletedLoops >= sequence.loopCount;
+    bool checked = false;
+    if (sequence.transition.enabled && sequence.transition.type == VisualConditionType::LoopEnd) {
+        if (exhausted) {
+            const int target = sequence.transition.targetSequenceIndex;
+            if (target > m_workflowSequenceIndex && target < m_workflow.sequences.size()) {
+                m_workflowSequenceIndex = target; m_workflowPointIndex = 0; m_workflowPointClickIndex = 0; m_workflowCompletedLoops = 0; m_workflowConsecutiveHits = 0;
+                emit workflowSequenceChanged(m_workflow.sequences[target].name, target, 0);
+                QTimer::singleShot(0, this, &ClickEngine::performWorkflowClick); return;
+            }
+            stopWorkflowWithReason(QStringLiteral("循环结束跳转目标无效")); return;
+        }
+    } else if (sequence.transition.enabled) {
+        // Every completed sequence round performs exactly one visual check.
+        checked = true;
+        uintptr_t conditionWindow = 0;
+        for (const SequencePoint& point : sequence.points) {
+            if (!point.hasWindowBinding && point.windowId == 0 && point.windowTitle.empty() && point.processName.empty() && point.windowClass.empty()) continue;
+            conditionWindow = m_platform->findWindowByLocator(point.windowTitle, point.processName, point.windowClass);
+            if (conditionWindow) break;
+        }
+        if (!conditionWindow) conditionWindow = m_workflowWindowId;
+        if (!conditionWindow) {
+            conditionWindow = m_platform->findWindowByLocator(m_workflow.targetWindow.title.toStdWString(), m_workflow.targetWindow.processName.toStdWString(), m_workflow.targetWindow.className.toStdWString());
+        }
+        if (!conditionWindow || m_platform->isWindowMinimized(conditionWindow) || m_platform->getForegroundWindowId() != conditionWindow) {
+            stopWorkflowWithReason(QStringLiteral("视觉条件绑定窗口不可见、最小化或无法重新定位")); return;
+        }
+        m_workflowWindowId = conditionWindow;
+        const QImage image = m_platform->captureWindow(conditionWindow);
+        if (image.isNull()) { m_workflowConsecutiveHits = 0; stopWorkflowWithReason(QStringLiteral("无法获取目标窗口画面")); return; }
+        QString detail; const bool matched = VisualDetector::matches(image, sequence.transition, &detail);
+        m_workflowConsecutiveHits = matched ? 1 : 0;
+        emit visualConditionChecked(detail, matched, m_workflowConsecutiveHits);
+        if (matched) {
+            const int target = sequence.transition.targetSequenceIndex;
+            if (target > m_workflowSequenceIndex && target < m_workflow.sequences.size()) {
+                m_workflowSequenceIndex = target; m_workflowPointIndex = 0; m_workflowPointClickIndex = 0; m_workflowCompletedLoops = 0; m_workflowConsecutiveHits = 0;
+                emit workflowSequenceChanged(m_workflow.sequences[target].name, target, 0);
+                QTimer::singleShot(0, this, &ClickEngine::performWorkflowClick); return;
+            }
+            stopWorkflowWithReason(QStringLiteral("跳转目标无效")); return;
+        }
+    }
+    if (exhausted) {
+        const QString reason = checked ? QStringLiteral("序列已完成，条件未命中") : QStringLiteral("序列已完成");
+        stopWorkflowWithReason(reason);
+        emit workflowCompleted(reason);
+        return;
+    }
+    QTimer::singleShot(0, this, &ClickEngine::performWorkflowClick);
 }
 
 int ClickEngine::getRandomInterval()

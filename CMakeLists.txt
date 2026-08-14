@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(AutoClicker VERSION 2.3.0 LANGUAGES CXX)
+project(AutoClicker VERSION 2.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,7 +16,11 @@ set(SOURCES
     src/MainWindow.cpp
     src/core/WindowsPlatformAdapter.cpp
     src/core/ClickEngine.cpp
+    src/core/SequencePointGeometry.cpp
+    src/core/VisualDetector.cpp
+    src/core/WorkflowStore.cpp
     src/utils/ConfigManager.cpp
+    resources/resources.qrc
 )
 
 set(HEADERS
@@ -24,12 +28,16 @@ set(HEADERS
     src/core/PlatformAdapter.h
     src/core/WindowsPlatformAdapter.h
     src/core/ClickEngine.h
+    src/core/SequencePointGeometry.h
+    src/core/VisualDetector.h
+    src/core/Workflow.h
+    src/core/WorkflowStore.h
     src/utils/ConfigManager.h
 )
 
 # Create a GUI executable on Windows so launching the .exe does not open a console.
 if(WIN32)
-    add_executable(AutoClicker WIN32 ${SOURCES} ${HEADERS})
+    add_executable(AutoClicker WIN32 ${SOURCES} ${HEADERS} resources/autoclicker.rc)
 else()
     add_executable(AutoClicker ${SOURCES} ${HEADERS})
 endif()
@@ -68,6 +76,28 @@ target_include_directories(AutoClicker PRIVATE
 set_target_properties(AutoClicker PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(AutoClickerCoreTests
+        tests/WorkflowCoreTests.cpp
+        src/core/WindowsPlatformAdapter.cpp
+        src/core/ClickEngine.cpp
+        src/core/SequencePointGeometry.cpp
+        src/core/VisualDetector.cpp
+        src/core/WorkflowStore.cpp
+    )
+    target_link_libraries(AutoClickerCoreTests PRIVATE Qt6::Widgets Qt6::Core Qt6::Gui)
+    if(WIN32)
+        target_link_libraries(AutoClickerCoreTests PRIVATE user32 psapi)
+        target_compile_definitions(AutoClickerCoreTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    endif()
+    target_include_directories(AutoClickerCoreTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    )
+    add_test(NAME AutoClickerCoreTests COMMAND AutoClickerCoreTests)
+endif()
 
 # Install rules
 install(TARGETS AutoClicker RUNTIME DESTINATION .)

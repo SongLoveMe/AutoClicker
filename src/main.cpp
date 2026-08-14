@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include "MainWindow.h"
 
 #ifndef AUTOCLICKER_VERSION
@@ -10,10 +11,11 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     app.setApplicationName("AutoClicker");
     app.setApplicationVersion(QStringLiteral(AUTOCLICKER_VERSION));
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/autoclicker.svg")));
 
     MainWindow window;
     window.setWindowTitle(QStringLiteral("AutoClicker v") + app.applicationVersion());
-    window.resize(600, 400);
+    window.resize(900, 560);
     window.show();
 
     return app.exec();

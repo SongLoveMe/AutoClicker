@@ -3,6 +3,28 @@
 #include <QGuiApplication>
 #include <QDebug>
 #include <QThread>
+#include <QScreen>
+
+namespace {
+// This uses child client rectangles rather than the parent window's visible
+// rectangle, which becomes an icon-sized placeholder while a window is
+// minimized. The point is updated into the deepest matched child's space.
+HWND findLogicalChildAtPoint(HWND parent, POINT* point)
+{
+    for (HWND child = GetWindow(parent, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+        POINT candidate = *point;
+        SetLastError(ERROR_SUCCESS);
+        if (MapWindowPoints(parent, child, &candidate, 1) == 0 && GetLastError() != ERROR_SUCCESS) continue;
+
+        RECT clientRect{};
+        if (!GetClientRect(child, &clientRect) || !PtInRect(&clientRect, candidate)) continue;
+
+        *point = candidate;
+        return findLogicalChildAtPoint(child, point);
+    }
+    return parent;
+}
+}
 
 WindowsPlatformAdapter::WindowsPlatformAdapter()
     : m_hwnd(nullptr)
@@ -124,6 +146,8 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
     // Convert to client area coordinates
     POINT clientPt = pt;
     ScreenToClient(topLevelWindow, &clientPt);
+    POINT targetPoint = clientPt;
+    HWND targetWindow = findLogicalChildAtPoint(topLevelWindow, &targetPoint);
 
     // Determine button flags
     WPARAM wParam = 0;
@@ -139,7 +163,7 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
             break;
     }
 
-    LPARAM lParam = MAKELPARAM(clientPt.x, clientPt.y);
+    LPARAM lParam = MAKELPARAM(targetPoint.x, targetPoint.y);
 
     int clickCount = 1;
     switch (action) {
@@ -177,11 +201,13 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
 
     // Use SendMessageTimeout for synchronous delivery (more reliable than PostMessage)
     DWORD_PTR result;
+    SendMessageTimeoutW(targetWindow, WM_MOUSEMOVE, 0, lParam,
+                       SMTO_ABORTIFHUNG, 100, &result);
 
     for (int i = 0; i < clickCount; ++i) {
-        SendMessageTimeoutW(topLevelWindow, downMsg, wParam, lParam,
+        SendMessageTimeoutW(targetWindow, downMsg, wParam, lParam,
                            SMTO_ABORTIFHUNG, 100, &result);
-        SendMessageTimeoutW(topLevelWindow, upMsg, 0, lParam,
+        SendMessageTimeoutW(targetWindow, upMsg, 0, lParam,
                            SMTO_ABORTIFHUNG, 100, &result);
 
         if (i < clickCount - 1) {
@@ -191,7 +217,7 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
 
     // For double-click, also send WM_LBUTTONDBLCLK
     if (action == ClickAction::Double && button == MouseButton::Left) {
-        SendMessageTimeoutW(topLevelWindow, WM_LBUTTONDBLCLK, wParam, lParam,
+        SendMessageTimeoutW(targetWindow, WM_LBUTTONDBLCLK, wParam, lParam,
                            SMTO_ABORTIFHUNG, 100, &result);
     }
 }
@@ -199,7 +225,25 @@ void WindowsPlatformAdapter::simulateClickNoInterference(int x, int y, MouseButt
 void WindowsPlatformAdapter::simulateClickToWindow(uintptr_t windowId, int relX, int relY, MouseButton button, ClickAction action)
 {
     HWND hwnd = reinterpret_cast<HWND>(windowId);
-    if (!hwnd) return;
+    if (!hwnd || !IsWindow(hwnd)) return;
+
+    const bool minimized = IsIconic(hwnd) != 0;
+    HWND target = hwnd;
+    POINT targetPoint{relX, relY};
+    if (!minimized) {
+        // The engine stores coordinates relative to the top-level window
+        // frame. Normal background windows need client conversion and child
+        // dispatch for controls such as browser renderers.
+        RECT windowRect{};
+        if (!GetWindowRect(hwnd, &windowRect)) return;
+        POINT clientOrigin{0, 0};
+        if (!ClientToScreen(hwnd, &clientOrigin)) return;
+        targetPoint = {
+            relX + (clientOrigin.x - windowRect.left),
+            relY + (clientOrigin.y - windowRect.top)
+        };
+        target = findLogicalChildAtPoint(hwnd, &targetPoint);
+    }
 
     // Determine button flags and messages
     WPARAM wParam = 0;
@@ -223,7 +267,7 @@ void WindowsPlatformAdapter::simulateClickToWindow(uintptr_t windowId, int relX,
             break;
     }
 
-    LPARAM lParam = MAKELPARAM(relX, relY);
+    LPARAM lParam = MAKELPARAM(targetPoint.x, targetPoint.y);
 
     int clickCount = 1;
     switch (action) {
@@ -233,13 +277,18 @@ void WindowsPlatformAdapter::simulateClickToWindow(uintptr_t windowId, int relX,
         case ClickAction::Hold: clickCount = 1; break;
     }
 
-    // Use SendMessageTimeout for synchronous delivery
+    // Use SendMessageTimeout for synchronous delivery. WM_MOUSEMOVE gives
+    // controls such as browser renderers the same target tracking context as
+    // a real pointer without moving the user's cursor or activating a window.
     DWORD_PTR result;
+    if (!minimized) {
+        SendMessageTimeoutW(target, WM_MOUSEMOVE, 0, lParam, SMTO_ABORTIFHUNG, 100, &result);
+    }
 
     for (int i = 0; i < clickCount; ++i) {
-        SendMessageTimeoutW(hwnd, downMsg, wParam, lParam,
+        SendMessageTimeoutW(target, downMsg, wParam, lParam,
                            SMTO_ABORTIFHUNG, 100, &result);
-        SendMessageTimeoutW(hwnd, upMsg, 0, lParam,
+        SendMessageTimeoutW(target, upMsg, 0, lParam,
                            SMTO_ABORTIFHUNG, 100, &result);
 
         if (action == ClickAction::Hold) {
@@ -253,7 +302,7 @@ void WindowsPlatformAdapter::simulateClickToWindow(uintptr_t windowId, int relX,
 
     // For double-click, also send WM_LBUTTONDBLCLK
     if (action == ClickAction::Double && button == MouseButton::Left) {
-        SendMessageTimeoutW(hwnd, WM_LBUTTONDBLCLK, wParam, lParam,
+        SendMessageTimeoutW(target, WM_LBUTTONDBLCLK, wParam, lParam,
                            SMTO_ABORTIFHUNG, 100, &result);
     }
 }
@@ -422,7 +471,10 @@ std::vector<WindowInfo> WindowsPlatformAdapter::listWindows()
 
         if (IsWindowVisible(hwnd)) {
             int length = GetWindowTextLengthW(hwnd);
-            if (length > 0) {
+            WCHAR className[256]{};
+            GetClassNameW(hwnd, className, 256);
+            const bool isSystemSurface = wcscmp(className, L"Progman") == 0 || wcscmp(className, L"WorkerW") == 0 || wcscmp(className, L"Shell_TrayWnd") == 0;
+            if (length > 0 || isSystemSurface) {
                 WindowInfo info;
                 info.id = reinterpret_cast<uintptr_t>(hwnd);
 
@@ -451,11 +503,23 @@ std::vector<WindowInfo> WindowsPlatformAdapter::listWindows()
                     CloseHandle(hProcess);
                 }
 
+                info.className = className;
+
                 list->push_back(info);
             }
         }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&windows));
+
+    const auto addIfMissing = [&windows, this](HWND hwnd) {
+        if (!hwnd) return;
+        const uintptr_t id = reinterpret_cast<uintptr_t>(hwnd);
+        for (const WindowInfo& entry : windows) if (entry.id == id) return;
+        windows.push_back(getWindowInfo(id));
+    };
+    addIfMissing(FindWindowW(L"Progman", nullptr));
+    addIfMissing(FindWindowW(L"Shell_TrayWnd", nullptr));
+    addIfMissing(GetDesktopWindow());
 
     return windows;
 }
@@ -684,7 +748,42 @@ WindowInfo WindowsPlatformAdapter::getWindowInfo(uintptr_t windowId)
         CloseHandle(hProcess);
     }
 
+    WCHAR className[256]{};
+    GetClassNameW(hwnd, className, 256);
+    info.className = className;
+
     return info;
+}
+
+uintptr_t WindowsPlatformAdapter::findWindowByLocator(const std::wstring& title, const std::wstring& processName,
+                                                       const std::wstring& className)
+{
+    const auto matches = [&](HWND hwnd) {
+        if (!IsWindow(hwnd)) return false;
+        WCHAR classBuffer[256]{};
+        GetClassNameW(hwnd, classBuffer, 256);
+        if (!className.empty() && className != classBuffer) return false;
+
+        const std::wstring windowTitle = getWindowTitleW(reinterpret_cast<uintptr_t>(hwnd));
+        if (!title.empty() && title != windowTitle) return false;
+
+        if (!processName.empty()) {
+            const WindowInfo info = getWindowInfo(reinterpret_cast<uintptr_t>(hwnd));
+            if (info.processName != processName) return false;
+        }
+        return !title.empty() || !processName.empty() || !className.empty();
+    };
+
+    HWND desktop = GetDesktopWindow();
+    if (matches(desktop)) return reinterpret_cast<uintptr_t>(desktop);
+
+    struct SearchContext { const decltype(matches)& predicate; HWND result = nullptr; } context{matches};
+    EnumWindows([](HWND hwnd, LPARAM value) -> BOOL {
+        auto* context = reinterpret_cast<SearchContext*>(value);
+        if (context->predicate(hwnd)) { context->result = hwnd; return FALSE; }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&context));
+    return reinterpret_cast<uintptr_t>(context.result);
 }
 
 bool WindowsPlatformAdapter::isWindowMinimized(uintptr_t windowId)
@@ -739,6 +838,10 @@ WindowInfo WindowsPlatformAdapter::getWindowPlacementInfo(uintptr_t windowId)
         info.processName = processName;
         CloseHandle(hProcess);
     }
+
+    WCHAR className[256]{};
+    GetClassNameW(hwnd, className, 256);
+    info.className = className;
 
     return info;
 }
@@ -905,4 +1008,43 @@ void WindowsPlatformAdapter::clickElement(uintptr_t elementId, MouseButton butto
             nonBlockingWait(50);  // v2.2: non-blocking wait
         }
     }
+}
+
+QImage WindowsPlatformAdapter::captureWindow(uintptr_t windowId)
+{
+    HWND hwnd = reinterpret_cast<HWND>(windowId);
+    if (!hwnd || !IsWindow(hwnd) || IsIconic(hwnd) || GetForegroundWindow() != hwnd) {
+        return QImage();
+    }
+
+    RECT rect{};
+    if (!GetWindowRect(hwnd, &rect)) return QImage();
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) return QImage();
+
+    HDC windowDc = GetWindowDC(hwnd);
+    HDC memoryDc = CreateCompatibleDC(windowDc);
+    HBITMAP bitmap = CreateCompatibleBitmap(windowDc, width, height);
+    HGDIOBJ previous = SelectObject(memoryDc, bitmap);
+    const bool copied = BitBlt(memoryDc, 0, 0, width, height, windowDc, 0, 0, SRCCOPY | CAPTUREBLT);
+
+    QImage image;
+    if (copied) {
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = width;
+        info.bmiHeader.biHeight = -height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        image = QImage(width, height, QImage::Format_ARGB32);
+        if (GetDIBits(memoryDc, bitmap, 0, height, image.bits(), &info, DIB_RGB_COLORS) == 0) image = QImage();
+    }
+
+    SelectObject(memoryDc, previous);
+    DeleteObject(bitmap);
+    DeleteDC(memoryDc);
+    ReleaseDC(hwnd, windowDc);
+    return image;
 }

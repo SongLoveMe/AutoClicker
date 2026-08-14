@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <memory>
 #include "PlatformAdapter.h"
+#include "Workflow.h"
 
 class ClickEngine : public QObject
 {
@@ -26,6 +27,7 @@ public:
     void setTargetWindow(uintptr_t windowId);
     void setTargetElement(const ElementInfo& element);
     void setAutoStopOnWindowLost(bool enabled);  // v2.2: auto-stop when target window closes
+    void setWorkflow(const Workflow& workflow, uintptr_t windowId, int startSequenceIndex = 0);
 
     void start();
     void stop();
@@ -42,6 +44,11 @@ signals:
     void finished();
     void errorOccurred(const QString& error);
     void windowLost(uintptr_t windowId, const QString& windowTitle);  // v2.2: window closed signal
+    void workflowSequenceChanged(const QString& name, int sequenceIndex, int completedLoops);
+    void visualConditionChecked(const QString& detail, bool matched, int consecutiveHits);
+    void workflowPaused(const QString& reason);
+    void workflowFinished(const QString& reason);
+    void workflowCompleted(const QString& reason);
 
 private slots:
     void performClick();
@@ -50,6 +57,10 @@ private:
     int getRandomInterval();
     QPoint getRandomOffset();
     SequencePoint getNextSequencePoint();  // Return full SequencePoint
+    void performWorkflowClick();
+    void checkWorkflowTransition();
+    void stopWorkflowWithReason(const QString& reason);
+    bool workflowHasVisualConditions() const;
 
     std::shared_ptr<PlatformAdapter> m_platform;
     QTimer* m_timer;
@@ -61,7 +72,7 @@ private:
     int m_sequenceIndex = 0;
     MouseButton m_button = MouseButton::Left;
     ClickAction m_action = ClickAction::Single;
-    ClickMethod m_clickMethod = ClickMethod::NoInterference;  // Default to no interference
+    ClickMethod m_clickMethod = ClickMethod::SimulateMouse;
     int m_intervalBase = 100;     // Base interval in ms
     int m_jitterRange = 0;        // Jitter range (+/- ms), 0 means no jitter
     int m_clickCount = -1;
@@ -80,6 +91,15 @@ private:
     bool m_autoStopOnWindowLost = true;  // v2.2: auto-stop when window closes (default enabled)
     int m_totalClicks = 0;
     int m_currentCount = 0;
+
+    Workflow m_workflow;
+    bool m_hasWorkflow = false;
+    int m_workflowSequenceIndex = 0;
+    int m_workflowPointIndex = 0;
+    int m_workflowPointClickIndex = 0;
+    int m_workflowCompletedLoops = 0;
+    int m_workflowConsecutiveHits = 0;
+    uintptr_t m_workflowWindowId = 0;
 };
 
 #endif // CLICKENGINE_H

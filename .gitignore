@@ -1,4 +1,4 @@
-# Build directories
+# Build and release output
 build/
 build-release/
 cmake-build-*/
@@ -6,7 +6,14 @@ out/
 dist/
 release/
 
-# Qt generated files
+# Runtime user data
+workflows/
+*.acworkflow
+!examples/*.acworkflow
+configs/user*.json
+logs/
+
+# Qt and CMake generated files
 *.user
 *.autosave
 moc_*.cpp
@@ -14,8 +21,11 @@ moc_*.h
 qrc_*.cpp
 ui_*.h
 *.qm
+CMakeCache.txt
+CMakeFiles/
+Testing/
 
-# Compiled files
+# Compiled binaries and libraries
 *.obj
 *.o
 *.exe
@@ -24,6 +34,8 @@ ui_*.h
 *.a
 *.so
 *.dylib
+*.pdb
+*.ilk
 
 # IDE files
 .vscode/
@@ -32,24 +44,17 @@ ui_*.h
 *.sln
 *.vcxproj*
 
-# Temporary files
+# Temporary and operating-system files
 *.log
 *.tmp
 *.bak
 *~
-
-# OS files
 .DS_Store
 Thumbs.db
 
-# Config files with user data
-configs/user*.json
-
-# Claude Code project files (development only, not for release)
+# Local assistant and maintainer-only documentation
+.claude/
 CLAUDE.md
 AGENTS.md
-.claude/
-
-# Local release guide (development only, not for release)
 RELEASE_README.md
 release-notes.md

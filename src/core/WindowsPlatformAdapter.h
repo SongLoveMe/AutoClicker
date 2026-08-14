@@ -33,6 +33,8 @@ public:
     std::string getWindowTitle(uintptr_t windowId) override;
     QPoint getWindowPosition(uintptr_t windowId) override;
     WindowInfo getWindowInfo(uintptr_t windowId) override;
+    uintptr_t findWindowByLocator(const std::wstring& title, const std::wstring& processName,
+                                  const std::wstring& className) override;
 
     // Minimized window handling
     bool isWindowMinimized(uintptr_t windowId) override;
@@ -46,6 +48,7 @@ public:
 
     ElementInfo findElementByText(uintptr_t windowId, const std::wstring& text) override;
     void clickElement(uintptr_t elementId, MouseButton button, ClickAction action) override;
+    QImage captureWindow(uintptr_t windowId) override;
 
 private:
     struct HotkeyBinding {
