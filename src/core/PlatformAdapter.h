@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 #include <QPoint>
-#include <QImage>
 #include <QString>
 
 enum class MouseButton {
@@ -63,18 +62,10 @@ struct SequencePoint {
     // Window identification (Unicode)
     std::wstring windowTitle;       // Window title for display and matching
     std::wstring processName;       // Process name for additional matching
-    std::wstring windowClass;       // Needed for title-less system windows such as taskbar/desktop
-    bool hasWindowBinding = false;  // false keeps legacy absolute-coordinate points compatible
-
-    // Point-level click behavior and window geometry snapshot.
-    int clickCount = 1;
-    int clickIntervalMs = 50;
-    int boundWindowWidth = 0;
-    int boundWindowHeight = 0;
 
     // User customization
     QString userLabel;              // Optional custom label (e.g., "Button OK")
-    int intervalMs = 100;           // Delay after this point before the next point.
+    int intervalMs = 0;             // v2.2: Per-point interval (0 = use global)
 };
 
 struct RecordedClick {
@@ -87,7 +78,6 @@ struct WindowInfo {
     uintptr_t id = 0;
     std::wstring title;             // Unicode window title
     std::wstring processName;       // Unicode process name
-    std::wstring className;         // Win32 class, used to reliably restore title-less windows
     int x = 0, y = 0, width = 0, height = 0;
 };
 
@@ -129,8 +119,6 @@ public:
 
     virtual QPoint getWindowPosition(uintptr_t windowId) = 0;
     virtual WindowInfo getWindowInfo(uintptr_t windowId) = 0;
-    virtual uintptr_t findWindowByLocator(const std::wstring& title, const std::wstring& processName,
-                                          const std::wstring& className) = 0;
 
     // Minimized window handling - uses GetWindowPlacement for correct position
     virtual bool isWindowMinimized(uintptr_t windowId) = 0;
@@ -148,9 +136,6 @@ public:
     // Element finding operations
     virtual ElementInfo findElementByText(uintptr_t windowId, const std::wstring& text) = 0;
     virtual void clickElement(uintptr_t elementId, MouseButton button, ClickAction action) = 0;
-
-    // Visual condition support. Returned image uses window-relative coordinates.
-    virtual QImage captureWindow(uintptr_t windowId) = 0;
 };
 
 #endif // PLATFORMADAPTER_H
