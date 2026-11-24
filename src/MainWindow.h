@@ -8,7 +8,7 @@
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QGroupBox>
-#include <QListWidget>
+#include <QTableWidget>
 #include <QLineEdit>
 #include <QTimer>
 #include <QDateTime>  // v2.2: for recording time intervals
@@ -64,11 +64,8 @@ private slots:
     void onDeleteSequenceItemClicked();
     void onMoveSequenceItemUp();
     void onMoveSequenceItemDown();
-    void onSequenceItemDoubleClicked(QListWidgetItem* item);
+    void onSequenceItemDoubleClicked(int row, int column);
     void onSequenceContextMenuRequested(const QPoint& pos);
-
-    // Window label slots
-    void onWindowLabelHovered(QListWidgetItem* item);
 
 private:
     void setupUI();
@@ -82,16 +79,26 @@ private:
     QGroupBox* createConfigGroupBox();
     QGroupBox* createPositionGroupBox();
     QGroupBox* createTargetWindowGroupBox();
-    QGroupBox* createWindowLabelsGroupBox();
     MouseButton getButtonFromConfig() const;
     ClickAction getActionFromConfig() const;
     void updateSequenceListDisplay();
+    void updateControls();
+    void setStatus(const QString& text, const QString& tone);
+    QString startBlockReason() const;
+    bool canEditSequence() const;
 
     QPushButton* m_startBtn;
     QPushButton* m_stopBtn;
     QPushButton* m_pauseBtn;
     QLabel* m_statusLabel;
     QLabel* m_clickCountLabel;
+    QLabel* m_modeLabel = nullptr;
+    QLabel* m_pointCountLabel = nullptr;
+    QLabel* m_validationLabel = nullptr;
+    QGroupBox* m_configGroup = nullptr;
+    QGroupBox* m_targetGroup = nullptr;
+    bool m_editingPoint = false;
+    QString m_errorMessage;
 
     QComboBox* m_buttonCombo;
     QComboBox* m_clickTypeCombo;
@@ -117,7 +124,7 @@ private:
     QPushButton* m_moveUpBtn;       // Move item up
     QPushButton* m_moveDownBtn;     // Move item down
     QPushButton* m_clearSeqBtn;     // Clear all
-    QListWidget* m_sequenceList;
+    QTableWidget* m_sequenceTable;
 
     // Enhanced sequence storage
     QList<SequencePoint> m_sequencePoints;  // Full sequence data
@@ -134,17 +141,12 @@ private:
     QPushButton* m_findElementBtn;
     QLabel* m_elementInfoLabel;
     uintptr_t m_targetWindowId = 0;
-    ElementInfo m_targetElement;
+    ElementInfo m_targetElement{};
     bool m_hasTargetElement = false;
     QTimer* m_windowUpdateTimer;
 
     // Window tracking
     uintptr_t m_lastClickedWindowId = 0;  // For click-based window detection
-
-    // Window labels UI
-    QListWidget* m_windowLabelsList;
-    QPushButton* m_highlightWindowBtn;
-    QMap<uintptr_t, QString> m_windowLabels;  // Window ID -> user label map
 
     std::shared_ptr<PlatformAdapter> m_platformAdapter;
     std::shared_ptr<ClickEngine> m_clickEngine;
